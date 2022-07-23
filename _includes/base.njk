@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Laurenz's Blog</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Blog about my coding projects." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Laurenz's Blog" />
+    <meta property="og:url" content="https://laurmaedje.github.io/" />
+    <meta property="og:site_name" content="Laurenz's Blog" />
+    <meta property="og:description" content="Blog about my coding projects." />
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header>
+      <a href="/" class="home">Laurenz's Blog</a>
+      <a href="https://github.com/laurmaedje" class="social">
+        <img
+          src="/assets/github.png"
+          alt="GitHub"
+          width="32"
+          height="32"
+        />
+      </a>
+    </header>
+    <main>
+      {{ content | safe }}
+    </main>
+  </body>
+</html>

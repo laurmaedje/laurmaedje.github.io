@@ -1,0 +1,22 @@
+{
+  "name": "blog",
+  "version": "0.0.1",
+  "description": "Blog about my coding projects.",
+  "scripts": {
+    "build": "npx @11ty/eleventy && npx prettier --write _site",
+    "watch": "npx @11ty/eleventy --watch",
+    "dev": "npx @11ty/eleventy --serve",
+    "serve": "npx serve _site"
+  },
+  "author": {
+    "name": "Laurenz Mädje",
+    "email": "laurmaedje@gmail.com"
+  },
+  "homepage": "laurmaedje.github.io",
+  "devDependencies": {
+    "@11ty/eleventy": "^1.0.1",
+    "@11ty/eleventy-plugin-syntaxhighlight": "^4.1.0",
+    "moment": "^2.29.4",
+    "prettier": "^2.7.1"
+  }
+}
