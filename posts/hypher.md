@@ -41,14 +41,15 @@ The general idea of the patterns is the following:
 There are _hyphenating_ and _inhibiting_ patterns.
 A hyphenating pattern says something like "if you see this sequence of letters, you can hyphenate here".
 An inhibiting pattern is the opposite: "If you see this sequence, don't hyphenate here!"
-There are multiple levels of each kind:
-The first level of hyphenating patterns defines broad, general rules like "you can hyphenate between two successive 'c's."
-The first level of inhibiting patterns handles exceptions from this rule.
-And, you guessed it, the second level of hyphenating patterns handles the exceptions of the exceptions.
+There are multiple levels of patterns:
+The first level of patterns is hyphenating and defines broad rules like "you can hyphenate between two successive 'c's."
+The second level of patterns is inhibiting and handles exceptions from the broad rules.
+And, you guessed it, the third level is again hyphenating and  handles the exceptions from the exceptions.
 
 The pattern files are encoded in a simple text format:
 Letters are just letters and a number between two letters designates a point of hyphenation or inhibition.
-Odd numbers specify hyphenations and even numbers inhibitions and the numbers max out at 9.
+An odd number specifies a point of hyphenation and an even number one of inhibition.
+This goes up to a maximum level of 9.
 Some pattern include dots to indicate that the pattern should only match at the start or end of the word.
 
 Now, to find out how to hyphenate a word, we first need a zero-initialized array of levels with length one less than that of the word (one entry for each point between two letters).
@@ -69,7 +70,7 @@ The example below illustrates this:
 So far so good.
 We know the general idea, but an important question remains:
 How do we find all matching patterns?
-While we could store the patterns in a hashmap and iterate over all substrings, but this would kind of defeat the point of this blog post.
+While we could store the patterns in a hashmap and iterate over all substrings, this would kind of defeat the point of this blog post.
 _We want performance._
 
 Luckily, Liang's thesis also contains efficient algorithms to work with the patterns.
@@ -89,50 +90,53 @@ We can easily build such a trie by iterating over the patterns, trying to walk e
 
 What is still missing from this illustration though is the levels!
 How does that work?
-Each pattern contains levels and each pattern corresponds to exactly one accepting state.
-Thus, we can simply associate the levels corresponding to each pattern within the accepting state.
+Since there is a one-to-one relationship between patterns and accepting states, we can simply associate the levels for a pattern with the accepting state.
 
-I have numbered the accepting states with Roman numerals so that we can write down the levels for each one.
-For each pattern there is one more level than it has letters as a level can be before the first letter, between each pair of letters and after the last letter.
+In the example above, I have numbered the accepting states with Roman numerals so that we can write down the levels for each one.
+A pattern with n letters can have n+1 levels:
+Before the first letter, between each pair of letters and after the last letter.
+If there isn't a number between two letters, it's the same as if there was a zero in between.
 This way, we get the following result:
 
-| State | Levels               |
-|-------|----------------------|
-| I     | `[1, 0, 0]`          |
-| II    | `[0, 2, 0, 0]`       |
-| III   | `[0, 0, 2, 0]`       |
-| IV    | `[0, 0, 0, 0, 4]`    |
-| V     | `[0, 0, 0, 5, 0, 0]` |
-| VI    | `[0, 0, 3, 0, 0]`    |
-| VII   | `[4, 0, 0, 0]`       |
+| State | Pattern  | Levels               |
+|-------|----------|----------------------|
+| I     | `1na`    | `[1, 0, 0]`          |
+| II    | `n2at`   | `[0, 2, 0, 0]`       |
+| III   | `he2n`   | `[0, 0, 2, 0]`       |
+| IV    | `hena4`  | `[0, 0, 0, 0, 4]`    |
+| V     | `hen5at` | `[0, 0, 0, 5, 0, 0]` |
+| VI    | `hy3ph`  | `[0, 0, 3, 0, 0]`    |
+| VII   | `4te.`   | `[4, 0, 0, 0]`       |
 
+Now, given a trie with levels, how do we hyphenate a word?
+We simply start a trie walk at each letter of the word and update the level array with the levels of each accepting state we meet.
+This way, we once again find all patterns that match any substring in the word, but much more efficiently!
+
+---
 You can think about tries like this:
 They allow us to efficiently encode _shared prefixes_ of the patterns.
 But we can even go one step further and also profit from _shared suffixes._
 This turns the trie into a finite state machine.
-()
 To do that, we have to find _ends_ of walks which are the same.
-In the example above, this would almost work for the two walks ending in `II` and `V`.
+In the example above, this would almost work for the two `a-t` walks ending in `II` and `V`.
 However, it unfortunately doesn't in this case because the levels associated with `II` and `V`  are different.
-For more details on tries and finite state machines, read [this][transducers] very interesting blog post.
+For more details on tries, finite state machines and suffix compression, read [this][transducers] very interesting blog post.
 
-Now, given a trie (or finite state machine), how do we hyphenate a word?
-We simply start a trie walk at each letter of the word and update the level array with the levels of each accepting state we meet.
-This way, we once again find all patterns that match any substring in the word, but much more efficiently!
+---
 
 ## Encoding state machines compactly
 All that is left to do is to compactly encode our state machine into bytes that we can embed into the binary.
-For this, I took some inspiration from [`regex-automata`], which underlies the [`regex`] crate and makes heavy use of all kinds of automatons.
+For this, I took some inspiration from [`regex-automata`], which makes heavy use of all kinds of automatons.
 
-For out machines, each state consists of transitions and optionally levels for accepting states.
+In our case, each state consists of transitions and optionally levels for accepting states.
 For each transition, we have a letter and a target state.
-Well actually, now is maybe a good time to bring up that we don't actually deal with letters/chars.
-Rather, we build our state machines over UTF-8 bytes.
+Well actually, now is maybe a good time to bring up that we don't actually deal with letters.
+Rather, we build our state machine over UTF-8 bytes.
 This works just as well, but is much easier to encode compactly.
 And when hyphenating, we then of course only start trie walks at UTF-8 codepoint boundaries.
 
 Back to the states:
-To encode transitions, we lay out two parallel arrays into memory.
+To encode transitions, we lay out two parallel arrays.
 The first contains each byte for which there is a transition and the second contains the _address delta_ to the state we should transition into for this byte.
 Each state has an _address:_ its byte offset in the whole encoded machine.
 Transition addresses are always encoded relative to the origin state as the delta is often much smaller than the absolute address.
@@ -150,7 +154,7 @@ Overall, a state's bitstream encoding looks like this:
 Now, the levels.
 If a state is accepting, it contains an additional _offset_ and a _length_ for the levels.
 The (offset, length) pair locates a slice of items in an additional array shared by all states.
-Each item in the level slice corresponds to one level in the state's pattern.
+Each item in the level slice corresponds to one number in the state's pattern.
 A level item consists of two parts: the distance of the level from the start of the word or previous level, and the level number.
 We again use the trick of making the distances relative to make them smaller.
 It turns out that there is no relative `distance` larger than 24 and no `level` larger than 9 in the patterns.
@@ -179,12 +183,13 @@ At runtime, we now don't need to prepare or load anything.
 We can just lazily decode the embedded automaton as we're executing it.
 And to eliminate the last allocation, we can even stack allocate the level array if the word isn't too long (<= 39 bytes in `hypher`).
 
-Regarding API, I opted for a free-standing method `hyphenate(&str, Lang) -> Syllables` as I feel that it is much more discoverable than a method on `Lang`.
+Regarding API, I opted for a free-standing method `hyphenate(&str, Lang) -> Syllables<'_>` as I feel that it is much more discoverable than a method on `Lang`.
 `Syllables` is a hand-written iterator that segments the string based on the level array.
 I also always enjoy when a crate makes my job as simple as a possible.
 Therefore, I added a `join` method to `Syllables` so that you quickly add in some (soft) hyphens.
 
-As the build script really took its time in debug builds, I added this to my `Cargo.toml` to somewhat optimize the build script:
+The tries are constructed and encoded with a build script.
+As that script really took its time in debug builds, I added this to my `Cargo.toml` to somewhat optimize the process.
 
 ```toml
 [profile.dev.build-override]
@@ -222,19 +227,17 @@ Moreover, the loading overhead of hyphenation is quite large in comparison to hy
 The direct overhead of embedding is ~1.1MB for hypher and ~2.8 MB for hyphenation.
 However, this comparison is unfair to hyphenation as I dropped some languages from hypher.
 Over the decades, quite many TeX pattern files have amassed.
-For many of these, I couldn't even find any evidence that hyphenation is used in the languages, so I removed those.
+For many of these, I couldn't even find any evidence that hyphenation is used in the languages, so I removed them.
 Furthermore, I wanted `hypher` to be permissively licensed.
 Therefore, it unfortunately does not support languages for which the only available patterns have GPL-like licenses.
 There are a few of those, but not too many.
 In a fairer comparison where only the common languages are considered, hypher's encoding is still ~12% more compact than hyphenation's.
 
-Well, that's it.
-Thank you for reading!
-Have a look at Typst [here][Typst] if you're interested.
+That's it, thank you for reading!
+Also, have a look at Typst [here][Typst] if you're interested.
 
 [`hypher`]: https://github.com/typst/hypher
 [`hyphenation`]: https://github.com/tapeinosyne/hyphenation
-[`regex`]: https://github.com/rust-lang/regex
 [`regex-automata`]: https://github.com/BurntSushi/regex-automata
 [docs.rs]: https://docs.rs
 [Typst]: https://typst.app
