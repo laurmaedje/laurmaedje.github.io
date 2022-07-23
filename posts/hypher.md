@@ -1,4 +1,9 @@
-# How to put 30 languages into 1.1MB
+---
+layout: post.njk
+title: How To Put 30 Languages Into 1.1MB
+date: 2022-07-23
+tags: post
+---
 
 _This blog post is about [`hypher`], a fast hyphenation library for Rust._
 
@@ -6,11 +11,11 @@ I'm currently working on a pure-rust LaTeX alternative called [Typst].
 To obtain justification results on par with LaTeX, Typst needs support for hyphenation.
 A quick search on [docs.rs] showed that there's only really one hyphenation library, fittingly called [`hyphenation`].
 All other crates I've found were small variations of this crate.
-The `hyphenation` crate has a lot of functionality and supports many languages.
+The hyphenation crate has a lot of functionality and supports many languages.
 However, it also has sizable binary overhead when you embed the hyphenation patterns (2.8MB).
 While you can load patterns at runtime, distributing the pattern files separately is so much more complicated than just embedding them.
 
-A specific pain point I had with `hyphenation` was that I needed to hold on to the loaded, heap-allocated language dictionaries.
+A specific pain point I had with hyphenation was that I needed to hold on to the loaded, heap-allocated language dictionaries.
 In my case, the text was pre-segmented into "words" (string segments between two [Unicode line break opportunities][unicode-linebreak]) and the language could be different for each word.
 Thus, I would've either had to reload the patterns for each word (slow) or set up some caching solution.
 Which is certainly possible, but I had some problems getting it to work because the hyphenating iterator kept borrows into the caching hash map.
@@ -31,7 +36,7 @@ assert_eq!(syllables.join("-"), "ex-ten-sive");
 ## Hyphenating words
 So, how do we actually hyphenate stuff?
 Turns out that there aren't really lists of hyphenated words that are available for free.
-So even with a new, let's say ML-based algorithm, we would still miss the data to make it work.
+So even with a new, let's say ML-based algorithm, we lack the data to make it work.
 (Such an approach would definitely be interesting, although I'm guessing the models would be quite large.)
 After a bit of research, it seemed that using TeX patterns is still the way to go.
 TeX patterns are, in principle, generated from word lists with the [patgen] tool, but many were tweaked by native speakers over the decades.
@@ -59,8 +64,7 @@ Finally, the possible hyphenation points lie at the odd levels in the array.
 The example below illustrates this:
 
 <img
-  style="display: block; margin: auto;"
-  src="../assets/hyphenate.svg"
+  src="/assets/hyphenate.svg"
   alt="Visualization of how to hyphenate the word 'hyphenate'"
   width="400"
   height="250"
@@ -75,18 +79,17 @@ _We want performance._
 
 Luckily, Liang's thesis also contains efficient algorithms to work with the patterns.
 The general idea is to create a _trie_, essentially a tree-shaped finite state machine, to encode the patterns.
-The example below contains such a trie for the seven patterns from the example above:
+Each path from the root of such a trie to an accepting state encodes one pattern.
+The figure below shows an example for the seven patterns from the example above (accepting states have double borders).
+You can see the pattern `n2at` being reflected by the topmost path through the trie.
+We can easily build such a trie by iterating over the patterns, trying to walk each pattern in the trie and adding states and transitions as necessary.
 
 <img
-  style="display: block; margin: auto;"
-  src="../assets/state-machine.svg"
-  alt="State machine for the six previously seen patterns"
+  src="/assets/state-machine.svg"
+  alt="State machine for the seven previously seen patterns"
   width="400"
   height="220"
 />
-
-From the start state on the left, each pattern corresponds to one walk of the trie ending with an accepting state (the ones with the double border).
-We can easily build such a trie by iterating over the patterns, trying to walk each pattern in the trie and adding states and transitions as necessary.
 
 What is still missing from this illustration though is the levels!
 How does that work?
@@ -99,7 +102,7 @@ If there isn't a number between two letters, it's the same as if there was a zer
 This way, we get the following result:
 
 | State | Pattern  | Levels               |
-|-------|----------|----------------------|
+|:------|:---------|:---------------------|
 | I     | `1na`    | `[1, 0, 0]`          |
 | II    | `n2at`   | `[0, 2, 0, 0]`       |
 | III   | `he2n`   | `[0, 0, 2, 0]`       |
@@ -120,7 +123,7 @@ This turns the trie into a finite state machine.
 To do that, we have to find _ends_ of walks which are the same.
 In the example above, this would almost work for the two `a-t` walks ending in `II` and `V`.
 However, it unfortunately doesn't in this case because the levels associated with `II` and `V`  are different.
-For more details on tries, finite state machines and suffix compression, read [this][transducers] very interesting blog post.
+For more details on tries, finite state machines and suffix compression, read [this very interesting blog post.][transducers]
 
 ---
 
@@ -144,8 +147,7 @@ To get maximum profit out of this, we further use a variable length address codi
 Overall, a state's bitstream encoding looks like this:
 
 <img
-  style="display: block; margin: auto;"
-  src="../assets/state-encoding.svg"
+  src="/assets/state-encoding.svg"
   alt="Binary state encoding"
   width="400"
   height="320"
@@ -212,29 +214,28 @@ english = []
 ## Benchmarks
 Now, let's very briefly compare [`hypher`] with [`hyphenation`].
 
-| Task                               | `hypher`  | `hyphenation`   |
-|------------------------------------|----------:|----------------:|
-| Hyphenating `extensive` (english)  | **356ns** |           698ns |
-| Hyphenating `διαμερίσματα` (greek) | **503ns** |          1121ns |
-| Loading the english patterns       |   **0us** |           151us |
-| Loading the greek patterns         |   **0us** |         0.826us |
-
-<small>All benchmarks were executed on ARM, Apple M1.</small>
+| Task                               | hypher | hyphenation     |
+|:-----------------------------------|-------:|----------------:|
+| Hyphenating `extensive` (english)  |  356ns |           698ns |
+| Hyphenating `διαμερίσματα` (greek) |  503ns |          1121ns |
+| Loading the english patterns       |    0us |           151us |
+| Loading the greek patterns         |    0us |         0.826us |
 
 For these two test cases, hypher is about 2x as fast as hyphenation.
 Moreover, the loading overhead of hyphenation is quite large in comparison to hyphenating a single word, at least for English.
+All benchmarks were executed on ARM, Apple M1.
 
 The direct overhead of embedding is ~1.1MB for hypher and ~2.8 MB for hyphenation.
 However, this comparison is unfair to hyphenation as I dropped some languages from hypher.
-Over the decades, quite many TeX pattern files have amassed.
-For many of these, I couldn't even find any evidence that hyphenation is used in the languages, so I removed them.
+Over the decades, quite a lot of TeX pattern files have amassed.
+For many of these, I couldn't even find any evidence that hyphenation is used for these languages, so I removed them.
 Furthermore, I wanted `hypher` to be permissively licensed.
 Therefore, it unfortunately does not support languages for which the only available patterns have GPL-like licenses.
 There are a few of those, but not too many.
 In a fairer comparison where only the common languages are considered, hypher's encoding is still ~12% more compact than hyphenation's.
 
 That's it, thank you for reading!
-Also, have a look at Typst [here][Typst] if you're interested.
+Also, [take a look at Typst][Typst] if you're interested.
 
 [`hypher`]: https://github.com/typst/hypher
 [`hyphenation`]: https://github.com/tapeinosyne/hyphenation
