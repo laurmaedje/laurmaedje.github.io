@@ -166,15 +166,15 @@ However, there are still only 25 * 10 = 250 combinations, which is less than 256
 
 ```rust
 fn pack(dist: u8, level: u8) -> u8 {
-  assert!(dist < 25, "too high distance");
-  assert!(level < 10, "too high level");
-  dist * 10 + level
+    assert!(dist < 25, "too high distance");
+    assert!(level < 10, "too high level");
+    dist * 10 + level
 }
 
 fn unpack(packed: u8) -> (u8, u8) {
-  let dist = packed / 10;
-  let level = packed % 10;
-  (dist, level)
+    let dist = packed / 10;
+    let level = packed % 10;
+    (dist, level)
 }
 ```
 
@@ -211,6 +211,8 @@ full = ["english"]
 english = []
 ```
 
+(Update: [There's now one feature per language.][features-pr])
+
 ## Benchmarks
 Now, let's very briefly compare [`hypher`] with [`hyphenation`].
 
@@ -237,6 +239,8 @@ In a fairer comparison where only the common languages are considered, hypher's 
 That's it, thank you for reading!
 Also, [take a look at Typst][Typst] if you're interested.
 
+Discussion on [r/rust][reddit-post].
+
 [`hypher`]: https://github.com/typst/hypher
 [`hyphenation`]: https://github.com/tapeinosyne/hyphenation
 [`regex-automata`]: https://github.com/BurntSushi/regex-automata
@@ -246,3 +250,5 @@ Also, [take a look at Typst][Typst] if you're interested.
 [patgen]: https://ctan.org/pkg/patgen?lang=de
 [liang-thesis]: https://tug.org/docs/liang/liang-thesis.pdf
 [transducers]: https://blog.burntsushi.net/transducers/
+[reddit-post]: https://www.reddit.com/r/rust/comments/w683br/how_to_put_30_languages_into_11mb/
+[features-pr]: https://github.com/typst/hypher/pull/3
