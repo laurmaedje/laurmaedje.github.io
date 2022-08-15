@@ -3,7 +3,7 @@ layout: base.njk
 ---
 
 <ul class="posts">
-  {% for post in collections.post %}
+  {% for post in collections.post | reverse %}
   <li>
     <h2><a href="{{ post.url | url }}">{{ post.data.title }}</a></h2>
     <time datetime="{{ post.date | dateIso }}">{{ post.date | dateReadable }}</time>
