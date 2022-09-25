@@ -3,6 +3,11 @@ layout: post.njk
 title: How To Put 30 Languages Into 1.1MB
 date: 2022-07-23
 tags: post
+description:
+  A post about hypher, a fast hyphenation library for Rust.
+  This library converts LaTeX hyphenation patterns into compact finite state
+  machines that can be traversed without any upfront loading.
+  The result is faster and leaner than previous crates.
 ---
 
 _This blog post is about [`hypher`], a fast hyphenation library for Rust._
