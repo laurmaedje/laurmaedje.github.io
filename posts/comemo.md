@@ -172,15 +172,22 @@ This redesign and comemo are more similar, but the salsa version is still harder
 From what I could gather, salsa 2022 also doesn't have a great mechanism for lazily loaded inputs (e.g. fonts that Typst pulls from a web server).
 There is also [adapton], another incrementality framework, but it's really complex and honestly I didn't really understand it.
 
-## Conclusion
+## Beyond comemo
 In Typst, incremental compilation started out with hand-written layout constraints.
 Unfortunately, these were very hard to write and pretty bug-prone.
 From this arose the idea to autogenerate constraints and ultimately comemo.
-And more work on incrementality happened in the front end:
-Typst's parser is incremental too and it powers both the compiler and syntax highlighting.
-We're really passionate to realize the dream of instant preview for a fully-fledged typesetting language.
+But there are more interesting problems we tackled to realize instant preview.
+For example, we implemented an incremental parser that powers both the compiler and our web app's syntax highlighting.
 
-If any of this was interesting for you, please also feel free to [check out Typst][Typst].
+Another big problem we faced was error reporting and jump-to-source functionality.
+To realize them, late stages of the compiler need to refer back to segments of the source code.
+The standard choice for this are simple byte ranges ("spans"), but these of course change a lot when editing the start of a file, invalidating lots of memoized results in the process.
+To fix this, we implemented a special syntax node numbering scheme that integrates with our incremental parser.
+It gives a stable identity to syntax nodes even when their byte offsets in the
+file change.
+
+To summarize: We're really really passionate about realizing true instant preview for a fully-fledged typesetting language.
+So, if any of this was interesting for you, please also feel free to [check out Typst][Typst].
 We are not yet in beta, but our wait list is open and we plan to invite a first batch of alpha testers within the year!
 
 [^1]: The type `Tracked<T>` is a wrapper around `T` that derefs to a newtype
