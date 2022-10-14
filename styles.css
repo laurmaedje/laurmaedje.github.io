@@ -115,7 +115,7 @@ pre > code {
 }
 
 pre .keyword { color: #d73a49; }
-pre .function, pre .table { color: #4b69c6; }
+pre .function, pre .table, pre .class-name { color: #4b69c6; }
 pre .macro { color: #16718d; }
-pre .number { color: #b60157; }
+pre .number, .attribute { color: #b60157; }
 pre .string { color: #298e0d; }
