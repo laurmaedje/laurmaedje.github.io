@@ -3,10 +3,8 @@
   "version": "0.0.1",
   "description": "Blog about my coding projects.",
   "scripts": {
-    "build": "npx @11ty/eleventy && npx prettier --write _site",
-    "watch": "npx @11ty/eleventy --watch",
-    "dev": "npx @11ty/eleventy --serve",
-    "serve": "npx serve _site"
+    "build": "babel-node --presets @babel/preset-react src/main.jsx",
+    "dev": "babel-node --presets @babel/preset-react src/main.jsx -- --dev"
   },
   "author": {
     "name": "Laurenz Mädje",
@@ -14,11 +12,20 @@
   },
   "homepage": "laurmaedje.github.io",
   "devDependencies": {
-    "@11ty/eleventy": "^1.0.1",
-    "@11ty/eleventy-plugin-syntaxhighlight": "^4.1.0",
+    "@babel/core": "^7.19.3",
+    "@babel/node": "^7.19.1",
+    "@babel/preset-react": "^7.18.6",
+    "chokidar": "^3.5.3",
+    "highlight.js": "^11.6.0",
+    "html-react-parser": "^3.0.4",
+    "js-yaml": "^4.1.0",
+    "livereload": "^0.9.3",
+    "markdown-it": "^13.0.1",
+    "markdown-it-footnote": "^3.0.3",
     "moment": "^2.29.4",
     "prettier": "^2.7.1",
-    "markdown-it": "^13.0.1",
-    "markdown-it-footnote": "^3.0.3"
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "serve": "^14.0.1"
   }
 }

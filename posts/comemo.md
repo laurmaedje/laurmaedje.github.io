@@ -1,8 +1,6 @@
 ---
-layout: post.njk
 title: Writing An Incremental Typesetting Engine
 date: 2022-10-15
-tags: post
 description:
   A post about comemo, a new Rust library for incremental compilation.
   In comparison to existing incrementality tools for Rust, comemo is very simple and natural to integrate into a project.
