@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>
+      Writing An Incremental Typesetting Engine | Laurenz&#x27;s Blog
+    </title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A post about comemo, a new Rust library for incremental compilation. In comparison to existing incrementality tools for Rust, comemo is very simple and natural to integrate into a project."
+    />
+    <meta property="og:type" content="article" />
+    <meta
+      property="og:title"
+      content="Writing An Incremental Typesetting Engine | Laurenz&#x27;s Blog"
+    />
+    <meta
+      property="og:url"
+      content="https://laurmaedje.github.io/posts/comemo"
+    />
+    <meta property="og:site_name" content="Laurenz&#x27;s Blog" />
+    <meta
+      property="og:description"
+      content="A post about comemo, a new Rust library for incremental compilation. In comparison to existing incrementality tools for Rust, comemo is very simple and natural to integrate into a project."
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <a href="/" class="home">Laurenz&#x27;s Blog</a
+      ><a href="https://github.com/laurmaedje" class="social"
+        ><img src="/assets/github.png" alt="GitHub" width="32" height="32"
+      /></a>
+    </header>
+    <main>
+      <article>
+        <h1>Writing An Incremental Typesetting Engine</h1>
+        <time date="2022-10-15T00:00:00.000Z">October 15, 2022</time>
+        <p>
+          In my last blog post, I shared how hyphenation works in the LaTeX
+          alternative <a href="https://typst.app">Typst</a> I’m working on.
+          Subsequently, there was a lot of interest in Typst on
+          <a
+            href="https://www.reddit.com/r/rust/comments/w683br/how_to_put_30_languages_into_11mb/"
+            >Reddit</a
+          >
+          and
+          <a href="https://news.ycombinator.com/item?id=32209794">Hacker News</a
+          >, which was very exciting to see! While a blog post about Typst
+          itself is definitely coming, for now I want to discuss another
+          interesting thing from Typst’s implementation: Our incremental
+          compilation system <em>comemo.</em>
+        </p>
+        <p>
+          In WYSIWYG tools like Word and Google Docs, users are accustomed to
+          instantly seeing the results of their edits. LaTeX users, in contrast,
+          still have to wait anywhere from seconds to half a minute to see their
+          changes reflected in the output. While this might not be a big deal
+          for experienced users writing structural markup, it is a big hurdle
+          for beginners. And even for certified TeXperts, it hurts with
+          experimentation and positioning adjustments. Have you ever compiled a
+          document five times in a row while trying to figure out the optimal
+          size of an image?
+        </p>
+        <p>
+          This is clearly not an acceptable situation. Thus, with Typst one of
+          our overarching goals was to provide “instant preview.” Or more
+          specifically: A preview whose refresh time is proportional to the size
+          of a performed edit. It’s fine for an initial compile of a big
+          document to take a few seconds, but subsequent compilations after
+          minor edits shouldn’t.
+        </p>
+        <h2>Memoization</h2>
+        <p>
+          How we do this? Well, we can’t start from scratch in every
+          compilation. Somehow we need to reuse partial results throughout
+          multiple compilations. The simplest way to do this is with
+          <em>memoization:</em> By caching a function’s output, so that it only
+          needs to be executed once per unique set of arguments. A typical
+          example of a function that is amenable to memoization is the fibonacci
+          sequence:
+        </p>
+        <pre><code class="language-rust"><span class="hljs-keyword">fn</span> <span class="hljs-title function_">fib</span>(n: <span class="hljs-type">u64</span>) <span class="hljs-punctuation">-&gt;</span> <span class="hljs-type">u64</span> {
+    <span class="hljs-keyword">match</span> n {
+        <span class="hljs-number">0</span> =&gt; <span class="hljs-number">0</span>,
+        <span class="hljs-number">1</span> =&gt; <span class="hljs-number">1</span>,
+        n =&gt; <span class="hljs-title function_ invoke__">fib</span>(n-<span class="hljs-number">1</span>) + <span class="hljs-title function_ invoke__">fib</span>(n-<span class="hljs-number">2</span>),
+    }
+}
+</code></pre>
+        <p>
+          In its naive recursive variant, executing this function takes
+          exponential time. With memoization, however, each unique call to
+          <code>fib</code> will be evaluated just once. This way, we can cut the
+          running time down from exponential to linear. In essence, memoization
+          trades memory for speed. And in Rust we can easily implement this as a
+          <code>#[memoize]</code> attribute macro that we can just slap onto our
+          function. Sounds great, right?
+        </p>
+        <p>
+          It’s not quite that simple, unfortunately. Memoization works best when
+          a function depends on the <em>full information</em> contained in its
+          inputs. In practice, this is often not the case though. A good example
+          of this is Typst’s layout implementation which operates on a tree of
+          nodes encoding different kinds of layouts. Apart from the node, a few
+          more things need to be supplied to the layouter: Most importantly,
+          fonts for text layout. But, since Typst is programmable, layout can
+          also trigger user code execution. This can in turn lead to file
+          accesses, module imports and more. Typst supplies all this through the
+          <code>World</code> trait (of which there are multiple implementations
+          for the local command line compiler and the WASM-based web app).
+          Slightly simplified, the setup looks as follows:
+        </p>
+        <pre><code class="language-rust"><span class="hljs-keyword">fn</span> <span class="hljs-title function_">layout</span>(node: &amp;Node, world: &amp;<span class="hljs-keyword">dyn</span> World) <span class="hljs-punctuation">-&gt;</span> Frame {
+    ...
+}
+
+<span class="hljs-keyword">trait</span> <span class="hljs-title class_">World</span> {
+    <span class="hljs-keyword">fn</span> <span class="hljs-title function_">book</span>(&amp;<span class="hljs-keyword">self</span>) <span class="hljs-punctuation">-&gt;</span> &amp;FontBook;
+    <span class="hljs-keyword">fn</span> <span class="hljs-title function_">font</span>(&amp;<span class="hljs-keyword">self</span>, id: <span class="hljs-type">usize</span>) <span class="hljs-punctuation">-&gt;</span> <span class="hljs-type">Option</span>&lt;Font&gt;;
+    <span class="hljs-keyword">fn</span> <span class="hljs-title function_">file</span>(&amp;<span class="hljs-keyword">self</span>, path: &amp;Path) <span class="hljs-punctuation">-&gt;</span> FileResult&lt;Buffer&gt;;
+}
+</code></pre>
+        <p>
+          To speed up our engine, we now want to memoize the layout function.
+          Now, think back to how memoization works and you might spot the
+          problem: The <code>layout</code> function effectively depends on
+          <em>everything,</em> on the whole state of the world! As soon as a
+          single source file changes, all memoized results become unusable.
+          That’s not good. Does memoization just not fit the bill?
+        </p>
+        <h2>Constrained memoization</h2>
+        <p>
+          Let’s not give up quite that quickly. That the
+          <code>layout</code> function <em>can</em> access the whole world,
+          doesn’t mean it will! And if some totally unrelated file changes, we
+          should still be able to reuse our layout results. To do that, we just
+          need to know which parts of the world a <code>layout</code> call
+          depends on and check that those stayed the same. This is what comemo
+          is about. To use it, we just have to add two attributes to the code
+          from before and wrap the <code>world</code> in comemo’s
+          <code>Tracked</code> container:
+        </p>
+        <pre><code class="language-rust"><span class="hljs-keyword">use</span> comemo::{memoize, track, Tracked};
+
+<span class="hljs-meta">#[memoize]</span>
+<span class="hljs-keyword">fn</span> <span class="hljs-title function_">layout</span>(node: &amp;Node, world: Tracked&lt;<span class="hljs-keyword">dyn</span> World&gt;) <span class="hljs-punctuation">-&gt;</span> Frame {
+    ...
+}
+
+<span class="hljs-meta">#[track]</span>
+<span class="hljs-keyword">trait</span> <span class="hljs-title class_">World</span> {
+    <span class="hljs-keyword">fn</span> <span class="hljs-title function_">book</span>(&amp;<span class="hljs-keyword">self</span>) <span class="hljs-punctuation">-&gt;</span> &amp;FontBook;
+    <span class="hljs-keyword">fn</span> <span class="hljs-title function_">font</span>(&amp;<span class="hljs-keyword">self</span>, id: <span class="hljs-type">usize</span>) <span class="hljs-punctuation">-&gt;</span> <span class="hljs-type">Option</span>&lt;Font&gt;;
+    <span class="hljs-keyword">fn</span> <span class="hljs-title function_">file</span>(&amp;<span class="hljs-keyword">self</span>, path: &amp;Path) <span class="hljs-punctuation">-&gt;</span> FileResult&lt;Buffer&gt;;
+}
+</code></pre>
+        <p>
+          The <code>memoize</code> attribute simply instructs comemo that this
+          function should be memoized. The <code>track</code> attribute is more
+          interesting. It implements the <code>Track</code> trait for
+          <code>dyn World</code>, allowing us to construct a
+          <code>Tracked&lt;dyn World&gt;</code>. A
+          <em>tracked argument</em> needn’t be exactly the same as in a previous
+          call for that call’s result to be reusable. It just needs to be used
+          equivalently.
+        </p>
+        <p>
+          This is what the <code>Tracked&lt;T&gt;</code> container is about. It
+          wraps <code>T</code> and only exposes the methods from the trait (or
+          impl block) annotated with <code>#[track]</code>.<sup
+            class="footnote-ref"
+            ><a href="#fn1" id="fnref1">[1]</a></sup
+          >
+          When one of the tracked methods is called, it generates
+          <em>constraints</em> that shrink down the set of equivalent
+          <code>T</code> instances. The constraints for <code>T</code> consist
+          of a struct containing one map for each tracked method. Each map
+          records the input-to-output mapping of that method. These recordings
+          encode all relevant information about an instance <code>x</code> of
+          <code>T</code>. When another instance <code>y</code> fulfills the
+          constraints generated for <code>x</code> during a memoized call, it
+          will trigger all the same code paths as <code>x</code> did.<sup
+            class="footnote-ref"
+            ><a href="#fn2" id="fnref2">[2]</a></sup
+          >
+          This means that memoized results for <code>x</code> can also be used
+          for <code>y</code>.
+        </p>
+        <p>
+          Let’s have a bit closer look at these input-to-output recordings. The
+          maps are structured as follows:
+        </p>
+        <ul>
+          <li>
+            <p>
+              <strong>Key:</strong> The key type of each map is a tuple of the
+              function’s arguments (excluding <code>self</code>). When an
+              argument is borrowed (like the <code>&amp;Path</code> argument to
+              <code>file</code>), comemo determines its owned variant with
+              <code>std::borrow::ToOwned</code> (therefore,
+              <code>PathBuf</code> in the figure below). When the function has
+              no arguments except <code>self</code>, the key type is the empty
+              tuple. The map can thus only have two states: Empty and containing
+              the empty tuple. Then, we can store the whole map as an
+              <code>Option</code> instead.
+            </p>
+          </li>
+          <li>
+            <p>
+              <strong>Value:</strong> The value type captures the output of the
+              method. To save memory, comemo merely stores 128-bit SipHashes
+              instead of the full return values. Although SipHash is not a
+              cryptographical hash function, it provides high enough resistance
+              against unlucky collisions. (It’s the same hash function that is
+              used in rustc’s incremental system and in std’s hash maps.)
+            </p>
+          </li>
+        </ul>
+        <p>
+          To determine whether an instance of <code>T</code> fulfills certain
+          constraints, we can replay the recordings and check for each method
+          whether its return values match the saved hashes.
+        </p>
+        <p>
+          The figure below visualizes the memory layout of a
+          <code>Tracked&lt;dyn World&gt;</code> and the constraint setup for a
+          <code>dyn World</code>:
+        </p>
+        <p>
+          <img
+            src="/assets/tracked.svg"
+            alt="Memory layout of the type `Tracked&lt;dyn World&gt;` pointing to a `dyn World` and a `WorldConstraint`. The constraint has fields for the book, font, and file methods."
+            width="400"
+            height="220"
+          />
+        </p>
+        <p>
+          Now, to perform memoization, we need a cache that stores the results
+          of each memoized function plus constraints on its inputs. When a
+          memoized function is called, this cache is checked for entries with
+          compatible constraints. If there’s a hit, we can directly return the
+          result. Otherwise, we generate empty constraints for the inputs, hook
+          them up into the tracked input types, execute the function itself, and
+          store the output alongside its generated constraints in the cache.
+        </p>
+        <p>
+          Well, that was a lot. Luckily, you don’t have to worry about this when
+          using comemo. It all happens automagically behind the scenes.
+        </p>
+        <h2>Comparison</h2>
+        <p>
+          You might be wondering how all of this compares to Rust’s incremental
+          compilation setup. <code>rustc</code>’s incrementality is based on the
+          <a href="https://rustc-dev-guide.rust-lang.org/query.html"
+            ><em>query system.</em></a
+          >
+          This system is built around a database of queries like “type check
+          this module” and “give me the type of this expression.” The database
+          caches query results and reuses them if possible. This query system
+          has since been lifted into an external library called
+          <a href="https://github.com/salsa-rs/salsa">salsa</a>, which is also
+          used by rust-analyzer.
+        </p>
+        <p>
+          Conceptually, comemo and salsa are somewhat similar. Both allow you to
+          reuse partial results even in face of changed inputs. But on the
+          developer-facing side they are quite different. In salsa, you have to
+          structure your whole program around the database. In comparison,
+          comemo is far simpler to integrate into existing programs. You can
+          just start annotating pure functions with <code>#[memoize]</code> and
+          add tracked arguments where applicable later. There’s also currently a
+          redesign of salsa
+          <a
+            href="https://smallcultfollowing.com/babysteps/blog/2022/08/18/come-contribute-to-salsa-2022/"
+            >in progress</a
+          >
+          (salsa 2022). This redesign and comemo are more similar, but the salsa
+          version is still harder to integrate. From what I could gather, salsa
+          2022 also doesn’t have a great mechanism for lazily loaded inputs
+          (e.g. fonts that Typst pulls from a web server). There is also
+          <a href="https://github.com/Adapton/adapton.rust/">adapton</a>,
+          another incrementality framework, but it’s really complex and honestly
+          I didn’t really understand it.
+        </p>
+        <h2>Beyond comemo</h2>
+        <p>
+          In Typst, incremental compilation started out with hand-written layout
+          constraints. Unfortunately, these were very hard to write and pretty
+          bug-prone. From this arose the idea to autogenerate constraints and
+          ultimately comemo. But there are more interesting problems we tackled
+          to realize instant preview. For example, we implemented an incremental
+          parser that powers both the compiler and our web app’s syntax
+          highlighting.
+        </p>
+        <p>
+          Another big problem we faced was error reporting and jump-to-source
+          functionality. To realize them, late stages of the compiler need to
+          refer back to segments of the source code. The standard choice for
+          this are simple byte ranges (“spans”), but these of course change a
+          lot when editing the start of a file, invalidating lots of memoized
+          results in the process. To fix this, we implemented a special syntax
+          node numbering scheme that integrates with our incremental parser. It
+          gives a stable identity to syntax nodes even when their byte offsets
+          in the file change.
+        </p>
+        <p>
+          To summarize: We’re really really passionate about realizing true
+          instant preview for a fully-fledged typesetting language. So, if any
+          of this was interesting for you, please also feel free to
+          <a href="https://typst.app">check out Typst</a>. We are not yet in
+          beta, but our wait list is open and we plan to invite a first batch of
+          alpha testers within the year!
+        </p>
+        <hr class="footnotes-sep" />
+        <section class="footnotes">
+          <ol class="footnotes-list">
+            <li id="fn1" class="footnote-item">
+              <p>
+                The type <code>Tracked&lt;T&gt;</code> is a wrapper around
+                <code>T</code> that derefs to a newtype generated by the
+                <code>#[track]</code> macro. This newtype has an inherent impl
+                with the tracked variants of the methods in the trait or impl
+                block annotated with <code>#[track]</code>.
+                <a href="#fnref1" class="footnote-backref">↩︎</a>
+              </p>
+            </li>
+            <li id="fn2" class="footnote-item">
+              <p>
+                As long as the function is pure. But that is a prerequisite for
+                memoization, anyway.
+                <a href="#fnref2" class="footnote-backref">↩︎</a>
+              </p>
+            </li>
+          </ol>
+        </section>
+      </article>
+    </main>
+  </body>
+</html>

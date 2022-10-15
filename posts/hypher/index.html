@@ -2,19 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>How To Put 30 Languages Into 1.1MB | Laurenz's Blog</title>
+    <title>How To Put 30 Languages Into 1.1MB | Laurenz&#x27;s Blog</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
       content="A post about hypher, a fast hyphenation library for Rust. This library converts LaTeX hyphenation patterns into compact finite state machines that can be traversed without any upfront loading. The result is faster and leaner than previous crates."
     />
     <meta property="og:type" content="article" />
-    <meta property="og:title" content="How To Put 30 Languages Into 1.1MB" />
+    <meta
+      property="og:title"
+      content="How To Put 30 Languages Into 1.1MB | Laurenz&#x27;s Blog"
+    />
     <meta
       property="og:url"
-      content="https://laurmaedje.github.io/posts/hypher/"
+      content="https://laurmaedje.github.io/posts/hypher"
     />
-    <meta property="og:site_name" content="Laurenz's Blog" />
+    <meta property="og:site_name" content="Laurenz&#x27;s Blog" />
     <meta
       property="og:description"
       content="A post about hypher, a fast hyphenation library for Rust. This library converts LaTeX hyphenation patterns into compact finite state machines that can be traversed without any upfront loading. The result is faster and leaner than previous crates."
@@ -23,15 +26,15 @@
   </head>
   <body>
     <header>
-      <a href="/" class="home">Laurenz's Blog</a>
-      <a href="https://github.com/laurmaedje" class="social">
-        <img src="/assets/github.png" alt="GitHub" width="32" height="32" />
-      </a>
+      <a href="/" class="home">Laurenz&#x27;s Blog</a
+      ><a href="https://github.com/laurmaedje" class="social"
+        ><img src="/assets/github.png" alt="GitHub" width="32" height="32"
+      /></a>
     </header>
     <main>
       <article>
         <h1>How To Put 30 Languages Into 1.1MB</h1>
-        <time datetime="2022-07-23T00:00:00.000Z">July 23, 2022</time>
+        <time date="2022-07-23T00:00:00.000Z">July 23, 2022</time>
         <p>
           <em
             >This blog post is about
@@ -40,14 +43,14 @@
           >
         </p>
         <p>
-          I'm currently working on a pure-rust LaTeX alternative called
+          I’m currently working on a pure-rust LaTeX alternative called
           <a href="https://typst.app">Typst</a>. To obtain justification results
           on par with LaTeX, Typst needs support for hyphenation. A quick search
-          on <a href="https://docs.rs">docs.rs</a> showed that there's only
+          on <a href="https://docs.rs">docs.rs</a> showed that there’s only
           really one hyphenation library, fittingly called
           <a href="https://github.com/tapeinosyne/hyphenation"
             ><code>hyphenation</code></a
-          >. All other crates I've found were small variations of this crate.
+          >. All other crates I’ve found were small variations of this crate.
           The hyphenation crate has a lot of functionality and supports many
           languages. However, it also has sizable binary overhead when you embed
           the hyphenation patterns (2.8MB). While you can load patterns at
@@ -57,11 +60,10 @@
         <p>
           A specific pain point I had with hyphenation was that I needed to hold
           on to the loaded, heap-allocated language dictionaries. In my case,
-          the text was pre-segmented into &quot;words&quot; (string segments
-          between two
+          the text was pre-segmented into “words” (string segments between two
           <a href="https://unicode.org/reports/tr14/"
             >Unicode line break opportunities</a
-          >) and the language could be different for each word. Thus, I would've
+          >) and the language could be different for each word. Thus, I would’ve
           either had to reload the patterns for each word (slow) or set up some
           caching solution. Which is certainly possible, but I had some problems
           getting it to work because the hyphenating iterator kept borrows into
@@ -72,22 +74,24 @@
           goals: No allocations, no loading at runtime, less binary overhead and
           no dependencies (why not). It looks like this:
         </p>
-        <pre
-          class="language-rust"
-        ><code class="language-rust"><span class="token keyword">use</span> <span class="token namespace">hypher<span class="token punctuation">::</span></span><span class="token punctuation">{</span>hyphenate<span class="token punctuation">,</span> <span class="token class-name">Lang</span><span class="token punctuation">}</span><span class="token punctuation">;</span><br><br><span class="token keyword">let</span> syllables <span class="token operator">=</span> <span class="token function">hyphenate</span><span class="token punctuation">(</span><span class="token string">"extensive"</span><span class="token punctuation">,</span> <span class="token class-name">Lang</span><span class="token punctuation">::</span><span class="token class-name">English</span><span class="token punctuation">)</span><span class="token punctuation">;</span><br><span class="token macro property">assert_eq!</span><span class="token punctuation">(</span>syllables<span class="token punctuation">.</span><span class="token function">join</span><span class="token punctuation">(</span><span class="token string">"-"</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token string">"ex-ten-sive"</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre>
-        <p>(And that's almost the whole API surface.)</p>
+        <pre><code class="language-rust"><span class="hljs-keyword">use</span> hypher::{hyphenate, Lang};
+
+<span class="hljs-keyword">let</span> <span class="hljs-variable">syllables</span> = <span class="hljs-title function_ invoke__">hyphenate</span>(<span class="hljs-string">&quot;extensive&quot;</span>, Lang::English);
+<span class="hljs-built_in">assert_eq!</span>(syllables.<span class="hljs-title function_ invoke__">join</span>(<span class="hljs-string">&quot;-&quot;</span>), <span class="hljs-string">&quot;ex-ten-sive&quot;</span>);
+</code></pre>
+        <p>(And that’s almost the whole API surface.)</p>
         <h2>Hyphenating words</h2>
         <p>
-          So, how do we actually hyphenate stuff? Turns out that there aren't
+          So, how do we actually hyphenate stuff? Turns out that there aren’t
           really lists of hyphenated words that are available for free. So even
-          with a new, let's say ML-based algorithm, we lack the data to make it
-          work. (Such an approach would definitely be interesting, although I'm
+          with a new, let’s say ML-based algorithm, we lack the data to make it
+          work. (Such an approach would definitely be interesting, although I’m
           guessing the models would be quite large.) After a bit of research, it
           seemed that using TeX patterns is still the way to go. TeX patterns
           are, in principle, generated from word lists with the
           <a href="https://ctan.org/pkg/patgen?lang=de">patgen</a> tool, but
           many were tweaked by native speakers over the decades. The algorithms
-          for dealing with the patterns go all the way back to Liang's 1983
+          for dealing with the patterns go all the way back to Liang’s 1983
           thesis
           <a href="https://tug.org/docs/liang/liang-thesis.pdf"
             ><em>Word Hy-phen-a-tion by Com-put-er</em></a
@@ -96,15 +100,14 @@
         <p>
           The general idea of the patterns is the following: There are
           <em>hyphenating</em> and <em>inhibiting</em> patterns. A hyphenating
-          pattern says something like &quot;if you see this sequence of letters,
-          you can hyphenate here&quot;. An inhibiting pattern is the opposite:
-          &quot;If you see this sequence, don't hyphenate here!&quot; There are
-          multiple levels of patterns: The first level of patterns is
-          hyphenating and defines broad rules like &quot;you can hyphenate
-          between two successive 'c's.&quot; The second level of patterns is
-          inhibiting and handles exceptions from the broad rules. And, you
-          guessed it, the third level is again hyphenating and handles the
-          exceptions from the exceptions.
+          pattern says something like “if you see this sequence of letters, you
+          can hyphenate here”. An inhibiting pattern is the opposite: “If you
+          see this sequence, don’t hyphenate here!” There are multiple levels of
+          patterns: The first level of patterns is hyphenating and defines broad
+          rules like “you can hyphenate between two successive &#x27;c’s.” The
+          second level of patterns is inhibiting and handles exceptions from the
+          broad rules. And, you guessed it, the third level is again hyphenating
+          and handles the exceptions from the exceptions.
         </p>
         <p>
           The pattern files are encoded in a simple text format: Letters are
@@ -128,7 +131,7 @@
         <p>
           <img
             src="/assets/hyphenate.svg"
-            alt="Visualization of how to hyphenate the word 'hyphenate'"
+            alt="Visualization of how to hyphenate the word &#x27;hyphenate&#x27;"
             width="400"
             height="250"
           />
@@ -142,7 +145,7 @@
           <em>We want performance.</em>
         </p>
         <p>
-          Luckily, Liang's thesis also contains efficient algorithms to work
+          Luckily, Liang’s thesis also contains efficient algorithms to work
           with the patterns. The general idea is to create a <em>trie</em>,
           essentially a tree-shaped finite state machine, to encode the
           patterns. Each path from the root of such a trie to an accepting state
@@ -171,8 +174,8 @@
           In the example above, I have numbered the accepting states with Roman
           numerals so that we can write down the levels for each one. A pattern
           with n letters can have n+1 levels: Before the first letter, between
-          each pair of letters and after the last letter. If there isn't a
-          number between two letters, it's the same as if there was a zero in
+          each pair of letters and after the last letter. If there isn’t a
+          number between two letters, it’s the same as if there was a zero in
           between. This way, we get the following result:
         </p>
         <table>
@@ -236,7 +239,7 @@
           turns the trie into a finite state machine. To do that, we have to
           find <em>ends</em> of walks which are the same. In the example above,
           this would almost work for the two <code>a-t</code> walks ending in
-          <code>II</code> and <code>V</code>. However, it unfortunately doesn't
+          <code>II</code> and <code>V</code>. However, it unfortunately doesn’t
           in this case because the levels associated with <code>II</code> and
           <code>V</code> are different. For more details on tries, finite state
           machines and suffix compression, read
@@ -258,7 +261,7 @@
           In our case, each state consists of transitions and optionally levels
           for accepting states. For each transition, we have a letter and a
           target state. Well actually, now is maybe a good time to bring up that
-          we don't actually deal with letters. Rather, we build our state
+          we don’t actually deal with letters. Rather, we build our state
           machine over UTF-8 bytes. This works just as well, but is much easier
           to encode compactly. And when hyphenating, we then of course only
           start trie walks at UTF-8 codepoint boundaries.
@@ -274,7 +277,7 @@
           maximum profit out of this, we further use a variable length address
           coding. The address array is either an <code>[i8]</code>,
           <code>[i16]</code> or <code>[i24]</code> depending on the largest
-          delta. Overall, a state's bitstream encoding looks like this:
+          delta. Overall, a state’s bitstream encoding looks like this:
         </p>
         <p>
           <img
@@ -289,36 +292,45 @@
           <em>offset</em> and a <em>length</em> for the levels. The (offset,
           length) pair locates a slice of items in an additional array shared by
           all states. Each item in the level slice corresponds to one number in
-          the state's pattern. A level item consists of two parts: the distance
+          the state’s pattern. A level item consists of two parts: the distance
           of the level from the start of the word or previous level, and the
           level number. We again use the trick of making the distances relative
           to make them smaller. It turns out that there is no relative
           <code>distance</code> larger than 24 and no <code>level</code> larger
           than 9 in the patterns. This means we can cramp both into a single
-          byte! We can't directly shift and bitor these two values into 8 bits
+          byte! We can’t directly shift and bitor these two values into 8 bits
           (distance would need 5 bits and level 4 bits). However, there are
           still only 25 * 10 = 250 combinations, which is less than 256. So we
           can fit it into one byte like this:
         </p>
-        <pre
-          class="language-rust"
-        ><code class="language-rust"><span class="token keyword">fn</span> <span class="token function-definition function">pack</span><span class="token punctuation">(</span>dist<span class="token punctuation">:</span> <span class="token keyword">u8</span><span class="token punctuation">,</span> level<span class="token punctuation">:</span> <span class="token keyword">u8</span><span class="token punctuation">)</span> <span class="token punctuation">-></span> <span class="token keyword">u8</span> <span class="token punctuation">{</span><br>    <span class="token macro property">assert!</span><span class="token punctuation">(</span>dist <span class="token operator">&lt;</span> <span class="token number">25</span><span class="token punctuation">,</span> <span class="token string">"too high distance"</span><span class="token punctuation">)</span><span class="token punctuation">;</span><br>    <span class="token macro property">assert!</span><span class="token punctuation">(</span>level <span class="token operator">&lt;</span> <span class="token number">10</span><span class="token punctuation">,</span> <span class="token string">"too high level"</span><span class="token punctuation">)</span><span class="token punctuation">;</span><br>    dist <span class="token operator">*</span> <span class="token number">10</span> <span class="token operator">+</span> level<br><span class="token punctuation">}</span><br><br><span class="token keyword">fn</span> <span class="token function-definition function">unpack</span><span class="token punctuation">(</span>packed<span class="token punctuation">:</span> <span class="token keyword">u8</span><span class="token punctuation">)</span> <span class="token punctuation">-></span> <span class="token punctuation">(</span><span class="token keyword">u8</span><span class="token punctuation">,</span> <span class="token keyword">u8</span><span class="token punctuation">)</span> <span class="token punctuation">{</span><br>    <span class="token keyword">let</span> dist <span class="token operator">=</span> packed <span class="token operator">/</span> <span class="token number">10</span><span class="token punctuation">;</span><br>    <span class="token keyword">let</span> level <span class="token operator">=</span> packed <span class="token operator">%</span> <span class="token number">10</span><span class="token punctuation">;</span><br>    <span class="token punctuation">(</span>dist<span class="token punctuation">,</span> level<span class="token punctuation">)</span><br><span class="token punctuation">}</span></code></pre>
+        <pre><code class="language-rust"><span class="hljs-keyword">fn</span> <span class="hljs-title function_">pack</span>(dist: <span class="hljs-type">u8</span>, level: <span class="hljs-type">u8</span>) <span class="hljs-punctuation">-&gt;</span> <span class="hljs-type">u8</span> {
+    <span class="hljs-built_in">assert!</span>(dist &lt; <span class="hljs-number">25</span>, <span class="hljs-string">&quot;too high distance&quot;</span>);
+    <span class="hljs-built_in">assert!</span>(level &lt; <span class="hljs-number">10</span>, <span class="hljs-string">&quot;too high level&quot;</span>);
+    dist * <span class="hljs-number">10</span> + level
+}
+
+<span class="hljs-keyword">fn</span> <span class="hljs-title function_">unpack</span>(packed: <span class="hljs-type">u8</span>) <span class="hljs-punctuation">-&gt;</span> (<span class="hljs-type">u8</span>, <span class="hljs-type">u8</span>) {
+    <span class="hljs-keyword">let</span> <span class="hljs-variable">dist</span> = packed / <span class="hljs-number">10</span>;
+    <span class="hljs-keyword">let</span> <span class="hljs-variable">level</span> = packed % <span class="hljs-number">10</span>;
+    (dist, level)
+}
+</code></pre>
         <p>
           If the encoded level slice for two states is the same, it is only
           stored once in the shared array, saving even more precious space.
         </p>
         <h2>Finishing up</h2>
         <p>
-          At runtime, we now don't need to prepare or load anything. We can just
-          lazily decode the embedded automaton as we're executing it. And to
+          At runtime, we now don’t need to prepare or load anything. We can just
+          lazily decode the embedded automaton as we’re executing it. And to
           eliminate the last allocation, we can even stack allocate the level
-          array if the word isn't too long (&lt;= 39 bytes in
+          array if the word isn’t too long (&lt;= 39 bytes in
           <code>hypher</code>).
         </p>
         <p>
           Regarding API, I opted for a free-standing method
-          <code>hyphenate(&amp;str, Lang) -&gt; Syllables&lt;'_&gt;</code> as I
-          feel that it is much more discoverable than a method on
+          <code>hyphenate(&amp;str, Lang) -&gt; Syllables&lt;&#x27;_&gt;</code>
+          as I feel that it is much more discoverable than a method on
           <code>Lang</code>. <code>Syllables</code> is a hand-written iterator
           that segments the string based on the level array. I also always enjoy
           when a crate makes my job as simple as a possible. Therefore, I added
@@ -330,31 +342,33 @@
           script really took its time in debug builds, I added this to my
           <code>Cargo.toml</code> to somewhat optimize the process.
         </p>
-        <pre
-          class="language-toml"
-        ><code class="language-toml"><span class="token punctuation">[</span><span class="token table class-name">profile.dev.build-override</span><span class="token punctuation">]</span><br><span class="token key property">opt-level</span> <span class="token punctuation">=</span> <span class="token number">1</span></code></pre>
+        <pre><code class="language-toml"><span class="hljs-section">[profile.dev.build-override]</span>
+<span class="hljs-attr">opt-level</span> = <span class="hljs-number">1</span>
+</code></pre>
         <p>
-          Regarding binary size: 1.1MB isn't that much, but there are also many
+          Regarding binary size: 1.1MB isn’t that much, but there are also many
           applications where you only want to hyphenate English. For this, I
           added two features <code>full</code> and <code>english</code> with
           <code>full</code> being enabled by default. Dropping
           <code>all</code> and adding <code>english</code> brings the overhead
-          down to 27KB. While I don't think its great to favor English like that
-          (I'm not a native English speaker), I also felt that adding one
-          feature per language didn't carry its weight.
+          down to 27KB. While I don’t think its great to favor English like that
+          (I’m not a native English speaker), I also felt that adding one
+          feature per language didn’t carry its weight.
         </p>
-        <pre
-          class="language-toml"
-        ><code class="language-toml"><span class="token punctuation">[</span><span class="token table class-name">features</span><span class="token punctuation">]</span><br><span class="token key property">default</span> <span class="token punctuation">=</span> <span class="token punctuation">[</span><span class="token string">"full"</span><span class="token punctuation">]</span><br><span class="token key property">full</span> <span class="token punctuation">=</span> <span class="token punctuation">[</span><span class="token string">"english"</span><span class="token punctuation">]</span><br><span class="token key property">english</span> <span class="token punctuation">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span></code></pre>
+        <pre><code class="language-toml"><span class="hljs-section">[features]</span>
+<span class="hljs-attr">default</span> = [<span class="hljs-string">&quot;full&quot;</span>]
+<span class="hljs-attr">full</span> = [<span class="hljs-string">&quot;english&quot;</span>]
+<span class="hljs-attr">english</span> = []
+</code></pre>
         <p>
           (Update:
           <a href="https://github.com/typst/hypher/pull/3"
-            >There's now one feature per language.</a
+            >There’s now one feature per language.</a
           >)
         </p>
         <h2>Benchmarks</h2>
         <p>
-          Now, let's very briefly compare
+          Now, let’s very briefly compare
           <a href="https://github.com/typst/hypher"><code>hypher</code></a> with
           <a href="https://github.com/tapeinosyne/hyphenation"
             ><code>hyphenation</code></a
@@ -405,18 +419,18 @@
           The direct overhead of embedding is ~1.1MB for hypher and ~2.8 MB for
           hyphenation. However, this comparison is unfair to hyphenation as I
           dropped some languages from hypher. Over the decades, quite a lot of
-          TeX pattern files have amassed. For many of these, I couldn't even
+          TeX pattern files have amassed. For many of these, I couldn’t even
           find any evidence that hyphenation is used for these languages, so I
           removed them. Furthermore, I wanted <code>hypher</code> to be
           permissively licensed. Therefore, it unfortunately does not support
           languages for which the only available patterns have GPL-like
           licenses. There are a few of those, but not too many. In a fairer
-          comparison where only the common languages are considered, hypher's
-          encoding is still ~12% more compact than hyphenation's.
+          comparison where only the common languages are considered, hypher’s
+          encoding is still ~12% more compact than hyphenation’s.
         </p>
         <p>
-          That's it, thank you for reading! Also,
-          <a href="https://typst.app">take a look at Typst</a> if you're
+          That’s it, thank you for reading! Also,
+          <a href="https://typst.app">take a look at Typst</a> if you’re
           interested.
         </p>
         <p>
