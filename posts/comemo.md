@@ -146,7 +146,6 @@ Now, to perform memoization, we need a cache that stores the results of each mem
 When a memoized function is called, this cache is checked for entries with compatible constraints.
 If there's a hit, we can directly return the result.
 Otherwise, we generate empty constraints for the inputs, hook them up into the tracked input types, execute the function itself, and store the output alongside its generated constraints in the cache.
-When the cache grows too large or entries become stale, they are evicted automatically.
 
 Well, that was a lot.
 Luckily, you don't have to worry about this when using comemo.
