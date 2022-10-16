@@ -1,23 +1,19 @@
 ---
-title: Writing An Incremental Typesetting Engine
+title: What If LaTeX Had Instant Preview?
 date: 2022-10-15
 description:
-  A post about comemo, a new Rust library for incremental compilation.
-  In comparison to existing incrementality tools for Rust, comemo is very simple and natural to integrate into a project.
+  A post about how incremental compilation works in the modern LaTeX alternative Typst.
 ---
 
-In my last blog post, I shared how hyphenation works in the LaTeX alternative [Typst] I'm working on.
-Subsequently, there was a lot of interest in Typst on [Reddit][reddit] and [Hacker News][hn], which was very exciting to see!
-While a blog post about Typst itself is definitely coming, for now I want to discuss another interesting thing from Typst's implementation: Our incremental compilation system [`comemo`][comemo].
-
 In WYSIWYG tools like Word and Google Docs, users are accustomed to instantly seeing the results of their edits.
-LaTeX users, in contrast, still have to wait anywhere from seconds to half a minute to see their changes reflected in the output.
-While this might not be a big deal for experienced users writing structural markup, it is a big hurdle for beginners.
+LaTeX users, in contrast, still have to wait anywhere between seconds and half a minute to see the preview for complex documents.
+While this might not be a big deal for experienced users writing structural markup, it's a big hurdle for beginners.
 And even for certified TeXperts, it hurts with experimentation and positioning adjustments.
 Have you ever compiled a document five times in a row while trying to figure out the optimal size of an image?
-
 This is clearly not an acceptable situation.
-Thus, with Typst one of our overarching goals was to provide "instant preview."
+
+I'm currently working on a modern LaTeX alternative called [Typst].
+With Typst, one of our overarching goals was to provide true "instant preview."
 Or more specifically:
 A preview whose refresh time is proportional to the size of a performed edit.
 It's fine for an initial compile of a big document to take a few seconds, but subsequent compilations after minor edits shouldn't.
@@ -82,7 +78,7 @@ Let's not give up quite that quickly.
 That the `layout` function _can_ access the whole world, doesn't mean it will!
 And if some totally unrelated file changes, we should still be able to reuse our layout results.
 To do that, we just need to know which parts of the world a `layout` call depends on and check that those stayed the same.
-This is what comemo is about.
+This is exactly what [`comemo`][comemo], a new library we developed for Typst, is about.
 To use it, we just have to add two attributes to the code from before and wrap the `world` in comemo's `Tracked` container:
 
 ```rust
@@ -194,8 +190,6 @@ We are not yet in beta, but our wait list is open and we plan to invite a first 
       But that is a prerequisite for memoization, anyway.
 
 [Typst]: https://typst.app
-[reddit]: https://www.reddit.com/r/rust/comments/w683br/how_to_put_30_languages_into_11mb/
-[hn]: https://news.ycombinator.com/item?id=32209794
 [comemo]: https://github.com/typst/comemo
 [query-system]: https://rustc-dev-guide.rust-lang.org/query.html
 [salsa]: https://github.com/salsa-rs/salsa
