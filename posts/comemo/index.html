@@ -2,18 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>
-      Writing An Incremental Typesetting Engine | Laurenz&#x27;s Blog
-    </title>
+    <title>What If LaTeX Had Instant Preview? | Laurenz&#x27;s Blog</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="A post about comemo, a new Rust library for incremental compilation. In comparison to existing incrementality tools for Rust, comemo is very simple and natural to integrate into a project."
+      content="A post about how incremental compilation works in the modern LaTeX alternative Typst."
     />
     <meta property="og:type" content="article" />
     <meta
       property="og:title"
-      content="Writing An Incremental Typesetting Engine | Laurenz&#x27;s Blog"
+      content="What If LaTeX Had Instant Preview? | Laurenz&#x27;s Blog"
     />
     <meta
       property="og:url"
@@ -22,7 +20,7 @@
     <meta property="og:site_name" content="Laurenz&#x27;s Blog" />
     <meta
       property="og:description"
-      content="A post about comemo, a new Rust library for incremental compilation. In comparison to existing incrementality tools for Rust, comemo is very simple and natural to integrate into a project."
+      content="A post about how incremental compilation works in the modern LaTeX alternative Typst."
     />
     <link rel="stylesheet" href="/styles.css" />
   </head>
@@ -35,39 +33,23 @@
     </header>
     <main>
       <article>
-        <h1>Writing An Incremental Typesetting Engine</h1>
+        <h1>What If LaTeX Had Instant Preview?</h1>
         <time date="2022-10-15T00:00:00.000Z">October 15, 2022</time>
-        <p>
-          In my last blog post, I shared how hyphenation works in the LaTeX
-          alternative <a href="https://typst.app">Typst</a> I’m working on.
-          Subsequently, there was a lot of interest in Typst on
-          <a
-            href="https://www.reddit.com/r/rust/comments/w683br/how_to_put_30_languages_into_11mb/"
-            >Reddit</a
-          >
-          and
-          <a href="https://news.ycombinator.com/item?id=32209794">Hacker News</a
-          >, which was very exciting to see! While a blog post about Typst
-          itself is definitely coming, for now I want to discuss another
-          interesting thing from Typst’s implementation: Our incremental
-          compilation system
-          <a href="https://github.com/typst/comemo"><code>comemo</code></a
-          >.
-        </p>
         <p>
           In WYSIWYG tools like Word and Google Docs, users are accustomed to
           instantly seeing the results of their edits. LaTeX users, in contrast,
-          still have to wait anywhere from seconds to half a minute to see their
-          changes reflected in the output. While this might not be a big deal
-          for experienced users writing structural markup, it is a big hurdle
-          for beginners. And even for certified TeXperts, it hurts with
+          still have to wait anywhere between seconds and half a minute to see
+          the preview for complex documents. While this might not be a big deal
+          for experienced users writing structural markup, it’s a big hurdle for
+          beginners. And even for certified TeXperts, it hurts with
           experimentation and positioning adjustments. Have you ever compiled a
           document five times in a row while trying to figure out the optimal
-          size of an image?
+          size of an image? This is clearly not an acceptable situation.
         </p>
         <p>
-          This is clearly not an acceptable situation. Thus, with Typst one of
-          our overarching goals was to provide “instant preview.” Or more
+          I’m currently working on a modern LaTeX alternative called
+          <a href="https://typst.app">Typst</a>. With Typst, one of our
+          overarching goals was to provide true “instant preview.” Or more
           specifically: A preview whose refresh time is proportional to the size
           of a performed edit. It’s fine for an initial compile of a big
           document to take a few seconds, but subsequent compilations after
@@ -139,10 +121,11 @@
           doesn’t mean it will! And if some totally unrelated file changes, we
           should still be able to reuse our layout results. To do that, we just
           need to know which parts of the world a <code>layout</code> call
-          depends on and check that those stayed the same. This is what comemo
-          is about. To use it, we just have to add two attributes to the code
-          from before and wrap the <code>world</code> in comemo’s
-          <code>Tracked</code> container:
+          depends on and check that those stayed the same. This is exactly what
+          <a href="https://github.com/typst/comemo"><code>comemo</code></a
+          >, a new library we developed for Typst, is about. To use it, we just
+          have to add two attributes to the code from before and wrap the
+          <code>world</code> in comemo’s <code>Tracked</code> container:
         </p>
         <pre><code class="language-rust"><span class="hljs-keyword">use</span> comemo::{memoize, track, Tracked};
 

@@ -58,6 +58,14 @@ a {
   text-decoration: none;
 }
 
+article a {
+  text-decoration: underline;
+}
+
+.footnotes a {
+  text-decoration: none;
+}
+
 a:visited {
   color:rgb(85, 26, 139);
 }
