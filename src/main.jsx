@@ -31,7 +31,7 @@ const markdown = require("markdown-it")({
 // Configuration.
 const DEV = process.argv.includes("--dev");
 const AHREFS =
-  "ahrefs-site-verification_ab196c32b430cd534174470f3bfc67da55eb94fc3c0b88a09f58dc62f75ec411";
+  "ab196c32b430cd534174470f3bfc67da55eb94fc3c0b88a09f58dc62f75ec411";
 
 main();
 
@@ -51,7 +51,7 @@ function main() {
     });
 
   // Recompilation.
-  chokidar.watch(["posts", "assets"]).on("change", build);
+  chokidar.watch(["src", "posts", "assets"]).on("change", build);
 
   // Live reload.
   livereload.createServer().watch("dist");
@@ -83,7 +83,10 @@ function build() {
 
   // Setup output directory, write ahrefs file and copy style file.
   mkdir("dist");
-  fs.writeFileSync(`dist/${AHREFS}`, AHREFS);
+  fs.writeFileSync(
+    `dist/ahrefs_${AHREFS}`,
+    `ahrefs-site-verification_${AHREFS}`
+  );
   fs.copyFileSync(`src/styles.css`, `dist/styles.css`);
 
   // Copy assets.
