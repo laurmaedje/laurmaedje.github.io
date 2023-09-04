@@ -1,4 +1,6 @@
 .DS_Store
 .vscode/
 dist/
+target/
 node_modules/
+Cargo.lock

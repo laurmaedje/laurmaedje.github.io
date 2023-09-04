@@ -49,6 +49,12 @@ h1, h2 {
   margin-block-end: 10px;
 }
 
+h3 {
+  margin-block-start: 30px;
+  margin-block-end: 0px;
+  color: rgb(71, 71, 71);
+}
+
 p {
   margin-block: 10px;
 }
@@ -127,3 +133,22 @@ pre > code {
 .hljs-built_in { color: #16718d; }
 .hljs-number, .hljs-meta { color: #b60157; }
 .hljs-string { color: #298e0d; }
+
+.typ-comment { color: #8a8a8a; }
+.typ-escape { color: #1d6c76; }
+.typ-strong { font-weight: bold; }
+.typ-emph { font-style: italic; }
+.typ-link { text-decoration: underline; }
+.typ-raw { color: #818181; }
+.typ-label { color: #1d6c76; }
+.typ-ref { color: #1d6c76; }
+.typ-heading { font-weight: bold; text-decoration: underline; }
+.typ-marker { color: #8b41b1; }
+.typ-term { font-weight: bold; }
+.typ-math-delim { color: #298e0d; }
+.typ-math-op { color: #1d6c76; }
+.typ-key { color: #d73a49; }
+.typ-num { color: #b60157; }
+.typ-str { color: #298e0d; }
+.typ-func { color: #4b69c6; }
+.typ-pol { color: #8b41b1; }

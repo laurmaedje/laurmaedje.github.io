@@ -12,6 +12,8 @@ const React = require("react");
 const ReactDOMServer = require("react-dom/server");
 const serveHandler = require("serve-handler");
 const yaml = require("js-yaml");
+const child_process = require("child_process");
+const stream = require("stream");
 
 // Setup markdown.
 const markdown = require("markdown-it")({
@@ -19,11 +21,21 @@ const markdown = require("markdown-it")({
   linkify: true,
   typographer: true,
   highlight: (src, lang) => {
+    if (lang === "typ") {
+      const code = child_process
+        .execFileSync("./highlight/target/debug/highlight", {
+          input: src,
+        })
+        .toString("utf8");
+      return `<pre>${code}</pre>`;
+    }
+
     if (lang && hljs.getLanguage(lang)) {
       try {
         return hljs.highlight(src, { language: lang }).value;
-      } catch (__) {}
+      } catch {}
     }
+
     return "";
   },
 }).use(require("markdown-it-footnote"));
