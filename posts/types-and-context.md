@@ -4,9 +4,9 @@ date: 2023-09-04
 description: Some ideas on advancing Typst.
 ---
 
-This blog post discusses some ideas about we could make Typst simpler and more
-expressive. In particular, it talks about custom elements, types, introspection,
-and "get rules".
+This blog post discusses some ideas about how we could make Typst simpler and
+more expressive. In particular, it talks about custom elements, types,
+introspection, and "get rules".
 
 ## Elements
 Typst has the concept of _elements_ that encode semantical entities in a
