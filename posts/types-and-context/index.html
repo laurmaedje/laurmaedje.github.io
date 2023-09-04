@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Types and Context | Laurenz&#x27;s Blog</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Some ideas on advancing Typst." />
+    <meta property="og:type" content="article" />
+    <meta
+      property="og:title"
+      content="Types and Context | Laurenz&#x27;s Blog"
+    />
+    <meta
+      property="og:url"
+      content="https://laurmaedje.github.io/posts/types-and-context"
+    />
+    <meta property="og:site_name" content="Laurenz&#x27;s Blog" />
+    <meta property="og:description" content="Some ideas on advancing Typst." />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <a href="/" class="home">Laurenz&#x27;s Blog</a
+      ><a href="https://github.com/laurmaedje" class="social"
+        ><img src="/assets/github.png" alt="GitHub" width="32" height="32"
+      /></a>
+    </header>
+    <main>
+      <article>
+        <h1>Types and Context</h1>
+        <time date="2023-08-24T00:00:00.000Z">August 24, 2023</time>
+        <p>
+          This blog post discusses some ideas about we could make Typst simpler
+          and more expressive. In particular, it talks about custom elements,
+          types, introspection, and “get rules”.
+        </p>
+        <h2>Elements</h2>
+        <p>
+          Typst has the concept of <em>elements</em> that encode semantical
+          entities in a document: Things like a figure, an image, but also just
+          text are elements. The structure of a document is defined by a tree of
+          elements and different concrete presentations can be derived from this
+          tree through show rules. Morover, Typst has the concept of an
+          <em>element function,</em> which is basically a constructor for an
+          element. (This concept is not really explained in the documentation
+          and sometimes a source of confusion.)
+        </p>
+        <p>
+          Why do we need elements and show rules though? Can’t we just have
+          functions that directly produce visual output? The answer is
+          decoupling: By separately defining the semantic model of an entity (as
+          an element) and its visual presentation (through a show rule), we can
+          display the same semantic element in different ways, through different
+          show rules, and thereby separate <em>content</em> from
+          <em>presentation.</em> We also have different options on how we want
+          to achieve this: (1) We can write separate sets of show rules for
+          different targets. This is similar to having different CSS files for
+          the same document. (2) We can write a single unified set of show rules
+          that internally uses if conditionals to check which output format we
+          are targeting. This a more akin to media queries.
+        </p>
+        <p>
+          Apart from separation of concerns, elements give us interoperability:
+          A heading created by package A can be styled through a show rule
+          defined by package B. This directly motivates custom elements: Why
+          should the set of semantical entites be restricted to built-in
+          elements? A library-defined entity benefits just as much from
+          separation of concerns and interoperability as a built-in one.
+        </p>
+        <p>
+          However, there are no custom elements in Typst at the moment. Instead,
+          packages use functions for things that conceptually should be
+          elements. Unfortunately, this severely hinders styling and
+          customization of package “elements”: Most packages either use
+          <code>.with(..)</code> overrides or expose some
+          <code>state()</code>-based solution for global configuration. Both of
+          these solutions have problems:
+        </p>
+        <ul>
+          <li>
+            <p>
+              <code>.with(..)</code> only affects the current variable scope, it
+              does not affect “elements” produced by some unrelated code. This
+              reduces composability: Imagine that headings created by some
+              package you use wouldn’t be affected by your heading show rules.
+            </p>
+          </li>
+          <li>
+            <p>
+              <code>state()</code>-based solutions are typically global: Styling
+              things locally thus becomes more complex or impossible.
+            </p>
+          </li>
+        </ul>
+        <p>
+          Both of these problems would be solved by set rules on custom
+          elements. The most direct way to integrate custom elements into Typst
+          (as it is today), would be custom element functions, with a syntax
+          like <code>let element mything(..) = ..</code>. However, upon closer
+          inspection, functions aren’t really the right concept to model
+          elements: Elements are <em>data</em> and not
+          <em>computations.</em> What we would write on the right-hand side of
+          an element function’s definition is really the
+          <strong>default show rule</strong> of the element. So, what is the
+          right tool to model <em>data</em>? The answer to this is simple:
+          Types.
+        </p>
+        <p>
+          By modelling elements as types instead of functions, I believe we can
+          also clear up a common confusion in Typst: Why can you
+          <code>set</code> arguments on certain functions, but not on others?
+          The answer lies again in composability. Consider the following snippet
+          of markup:
+        </p>
+        <pre><code><span class="typ-key">#</span><span class="typ-key">let</span> it <span class="typ-op">=</span> <span class="typ-func">heading</span><span class="typ-punct">[</span>Hello<span class="typ-punct">]</span>
+<span class="typ-key">#</span><span class="typ-key">set</span> <span class="typ-func">heading</span><span class="typ-punct">(</span>numbering<span class="typ-punct">:</span> <span class="typ-str">&quot;1.&quot;</span><span class="typ-punct">)</span>
+<span class="typ-pol">#</span><span class="typ-pol">it</span>
+</code></pre>
+        <p>
+          The heading stored in <code>it</code> is affected by the numbering set
+          rule even though the <code>heading</code> function was called before
+          the set rule was in effect. This way, we get our desired
+          composability: A heading created by some package is affected by our
+          set and show rules even though it is independent of our local variable
+          scope.
+        </p>
+        <p>
+          Set rules do <strong>not</strong> simply pre-set an argument for the
+          remainder of the scope. Instead, they apply configuration to the
+          subtree of content generated by the scope they are in. They manipulate
+          a <em>tree of data,</em> not the <em>flow of computation.</em> Because
+          they manipulate elements, they only work for arguments of element
+          functions, not arguments of normal computational functions.
+        </p>
+        <p>
+          In a world where we model elements as types instead of functions, set
+          rules thus only work on types and not on functions. This is a much
+          clearer distinction than that of normal vs element functions. It’s
+          still not super trivial to understand when a settable property can be
+          observed on an value, but knowledge of this is also typically only
+          required for more advanced use cases.
+        </p>
+        <h2>Types</h2>
+        <p>
+          As we discussed, elements are data, so it makes sense to model them as
+          types rather than functions. This design has the added benefit that
+          custom types can be generally useful for advanced scripting. Modelling
+          an element as a type could look like this:
+        </p>
+        <pre><code><span class="typ-key">#</span><span class="typ-key">type</span> heading <span class="typ-punct">{</span>
+  <span class="typ-key">field</span> level <span class="typ-op">=</span> <span class="typ-num">1</span>
+  <span class="typ-key">field</span> numbering <span class="typ-op">=</span> <span class="typ-key">none</span>
+  <span class="typ-key">field</span> supplement <span class="typ-op">=</span> <span class="typ-key">auto</span>
+  <span class="typ-key">field</span> outlined <span class="typ-op">=</span> <span class="typ-key">true</span>
+  <span class="typ-key">field</span> bookmarked <span class="typ-op">=</span> <span class="typ-key">auto</span>
+  <span class="typ-key">field</span> body
+
+  <span class="typ-comment">// This is the default show rule for headings.</span>
+  <span class="typ-comment">// It can be overridden by `show heading: ..`.</span>
+  <span class="typ-key">show</span><span class="typ-punct">:</span> it <span class="typ-op">=&gt;</span> <span class="typ-func">block</span><span class="typ-punct">(</span><span class="typ-punct">{</span>
+    <span class="typ-key">if</span> it<span class="typ-punct">.</span>numbering <span class="typ-op">!=</span> <span class="typ-key">none</span> <span class="typ-punct">{</span>
+      <span class="typ-func">counter</span><span class="typ-punct">(</span>heading<span class="typ-punct">)</span>
+      <span class="typ-func">h</span><span class="typ-punct">(</span><span class="typ-num">0.3em</span><span class="typ-punct">,</span> weak<span class="typ-punct">:</span> <span class="typ-key">true</span><span class="typ-punct">)</span>
+    <span class="typ-punct">}</span>
+    it<span class="typ-punct">.</span>body
+  <span class="typ-punct">}</span><span class="typ-punct">)</span>
+<span class="typ-punct">}</span>
+</code></pre>
+        <p>
+          Within a type definition, there would be fields, scoped bindings, and
+          optionally a default show rule.
+        </p>
+        <ol>
+          <li>
+            <p>
+              Fields associate data with an instance of the type. They can have
+              default values, which makes them optional to specify in the type’s
+              (automatically generated) constructor. Moreover, optional fields
+              could be used with set rules of that type. Fields without default
+              value would be required in the constructor and couldn’t be used
+              with set rules (it wouldn’t make sense because they are always
+              already inherently defined for each instance of the type).
+            </p>
+          </li>
+          <li>
+            <p>
+              Scoped bindings would become available in the type’s scope. For
+              example, <code>let zero = ..</code> would allow us to write
+              <code>point.zero</code>. Similarly,
+              <code>let add(..) = ..</code> would let us write
+              <code>point.add(..)</code>. Moreover, functions in a type’s scope
+              could be called as <em>methods</em> on instances of that type. We
+              could write <code>a.add(b)</code> because <code>add</code> would
+              be defined in the scope of <code>type(a)</code>. Here,
+              <code>add</code> is a normal function. Methods wouldn’t be a
+              separate concept from functions, they would just be an alternative
+              way to call a function in a type’s scope. The argument names in
+              <code>add</code> are also arbitrary, we could have also used
+              <code>self</code> instead of <code>a</code> should we prefer that.
+            </p>
+          </li>
+          <li>
+            <p>
+              The type can have a default show rule that defines its visual
+              presentation. If we omit that default show rule for the type, it
+              becomes just its <code>repr</code> (i.e. its name and its fields).
+            </p>
+          </li>
+        </ol>
+        <p>
+          Note that this design <em>can</em> accomodate type hints down the
+          road, but it doesn’t require them right away. A more classical type
+          could look like this:
+        </p>
+        <pre><code><span class="typ-key">#</span><span class="typ-key">type</span> point <span class="typ-punct">{</span>
+  <span class="typ-key">field</span> x
+  <span class="typ-key">field</span> y
+
+  <span class="typ-key">let</span> zero <span class="typ-op">=</span> <span class="typ-func">point</span><span class="typ-punct">(</span><span class="typ-num">0</span><span class="typ-punct">,</span> <span class="typ-num">0</span><span class="typ-punct">)</span>
+  <span class="typ-key">let</span> <span class="typ-func">add</span><span class="typ-punct">(</span>a<span class="typ-punct">,</span> b<span class="typ-punct">)</span> <span class="typ-op">=</span> <span class="typ-func">point</span><span class="typ-punct">(</span>a<span class="typ-punct">.</span>x <span class="typ-op">+</span> b<span class="typ-punct">.</span>x<span class="typ-punct">,</span> a<span class="typ-punct">.</span>y <span class="typ-op">+</span> b<span class="typ-punct">.</span>y<span class="typ-punct">)</span>
+<span class="typ-punct">}</span>
+
+<span class="typ-key">#</span><span class="typ-key">let</span> z <span class="typ-op">=</span> point<span class="typ-punct">.</span>zero
+<span class="typ-key">#</span><span class="typ-key">let</span> a <span class="typ-op">=</span> <span class="typ-func">point</span><span class="typ-punct">(</span><span class="typ-num">2</span><span class="typ-punct">,</span> <span class="typ-num">3</span><span class="typ-punct">)</span>
+<span class="typ-key">#</span><span class="typ-key">let</span> b <span class="typ-op">=</span> <span class="typ-func">point</span><span class="typ-punct">(</span><span class="typ-num">1</span><span class="typ-punct">,</span> <span class="typ-num">4</span><span class="typ-punct">)</span>
+<span class="typ-key">#</span><span class="typ-key">let</span> r <span class="typ-op">=</span> <span class="typ-func">point</span><span class="typ-punct">(</span><span class="typ-num">3</span><span class="typ-punct">,</span> <span class="typ-num">7</span><span class="typ-punct">)</span>
+
+<span class="typ-pol">#</span><span class="typ-pol">assert</span><span class="typ-punct">.</span><span class="typ-func">eq</span><span class="typ-punct">(</span>a<span class="typ-punct">.</span><span class="typ-func">add</span><span class="typ-punct">(</span>b<span class="typ-punct">)</span><span class="typ-punct">,</span> r<span class="typ-punct">)</span>
+<span class="typ-pol">#</span><span class="typ-pol">assert</span><span class="typ-punct">.</span><span class="typ-func">eq</span><span class="typ-punct">(</span>point<span class="typ-punct">.</span><span class="typ-func">add</span><span class="typ-punct">(</span>a<span class="typ-punct">,</span> b<span class="typ-punct">)</span><span class="typ-punct">,</span> r<span class="typ-punct">)</span>
+</code></pre>
+        <p>
+          If we model elements as normal types, certain things that were
+          specific to content now affect all values.
+        </p>
+        <p>
+          First, it would mean that any type can have set &amp; show rules, not
+          just special elements. This makes possible some things that just don’t
+          work right now (which is confusing to people): Right now, an integer
+          or a float is eagerly converted to text when it is interpolated into
+          content. As a result, this conversion cannot be affected by set rules
+          (as discussed above, they can only affect the transformation of the
+          tree of elements, not immediate computation). This means that things
+          like setting the decimal separator with a set rule is not possible. If
+          the integer was retained as a value, however, and only converted to
+          text through its show rule, this problem would go away.
+        </p>
+        <p>
+          Second up is the question what happens to functions that currently
+          take <code>content</code>. Since anything can be displayed, these
+          <em>could</em> be changed to take <code>any</code>. However, this
+          means that functions that accept content <em>or</em> some value (like
+          <code>auto</code> or <code>none</code>) would have somewhat
+          nonsensical signatures like <code>auto | any</code>. I’m not sure
+          whether I consider this a big problem, but it’s still somewhat of an
+          open question how we deal with that. We could also continue to have a
+          notion of <code>content</code> and restrict which types “implement
+          that interface”.
+        </p>
+        <p>
+          Third, are <code>location</code>s and <code>label</code>s. Supporting
+          them on arbitrary values does complicate things somewhat. Even an
+          integer could have a label, which is slightly crazy. But I think,
+          overall it is not that problematic as long as we implement it
+          efficiently (i.e. keep the overhead minimal for values that
+          <em>don’t</em> have a label.) It’s also kinda nice if we can query for
+          anything we label and put into the document, even an integer.
+          Locations fit in with some other thoughts I had, so I will postpone
+          talking about them for a bit.
+        </p>
+        <h2>Context</h2>
+        <p>
+          As it stands, <code>locate</code>, <code>style</code>, and
+          <code>layout</code> are three separate instances of the same pattern:
+          A function that takes a closure and returns content, which evaluates
+          the closure lazily and possibly multiple times. Precisely this is the
+          important aspect of them: While a normal block of code runs exactly
+          once, code wrapped in such a function can run never, just once, or
+          more than one time. Moreover, the arguments these functions provide (a
+          <code>location</code>, a <code>styles</code> object, and a
+          <code>size</code> dictionary, respectively) may be different during
+          each invocation as they are <em>context-dependant.</em>
+        </p>
+        <p>The current setup is quite confusing for a number of reasons:</p>
+        <ul>
+          <li>
+            <p>
+              Lack of conceptual generality: An experienced Typst user might see
+              the conceptual parallelity of <code>locate</code>,
+              <code>style</code>, and <code>layout</code>. A beginner, however,
+              will not know about this. Because the callback architecture is
+              currently a pattern rather than an actual language concept, there
+              is no good place to document it and no good way to teach it.
+            </p>
+          </li>
+          <li>
+            <p>
+              Bad diagnostics: People frequently try to write things like
+              <code
+                >let final = locate(loc =&gt; counter.final(loc)); #(final +
+                1)</code
+              >. The compiler will then unhelpfully say that it could not add
+              content and an integer.
+            </p>
+          </li>
+          <li>
+            <p>
+              Confusing API: Some functions like <code>query</code> and
+              <code>counter.final</code> take in a
+              <code>location</code> parameter and then
+              <em>they just discard it.</em> This parameter has the sole purpose
+              of ensuring that the function is called within a
+              <code>locate</code> context. Note that this restriction is
+              <strong>not</strong> strictly necessary from a language-design
+              perspective. It is motivated by implementation reasons: By
+              encapsulating all queries in <code>locate</code> contexts, we can
+              reduce the scope of incremental recomputations from a whole module
+              to a small block of code. If we would allow top-level queries,
+              things like module exports could depend on queries, meaning a
+              module wouldn’t be a well-defined self-contained entity without an
+              introspection context.
+            </p>
+          </li>
+        </ul>
+        <p>
+          I believe that the fundamental problem is not how these things
+          <em>work internally,</em> but how we <em>expose</em> them. My proposal
+          is the following:
+        </p>
+        <ul>
+          <li>
+            <p>
+              We introduce the explicit notion of
+              <em>contextual functions.</em> Such functions depend on some piece
+              of information that differs across the document and as such they
+              cannot run without an established context. The documentation
+              clearly marks them as contextual and states what piece of context
+              they depend on.
+            </p>
+          </li>
+          <li>
+            <p>
+              We introduce a <code>context</code> expression. This expression
+              wraps another expression and provides context to it
+              <em>implicitly.</em> When you call a contextual function outside
+              of an established context, the compiler produces a helpful error
+              message with the hint to use a context expression. A context
+              expression’s return value is an opaque contextual value that can
+              be placed into the document, yielding different output depending
+              on the context. If you try to use a contextual value for normal
+              computation, the compiler produces a helpful error message and
+              links to an explanation.
+            </p>
+          </li>
+        </ul>
+        <p>Consider this piece of code:</p>
+        <pre><code><span class="typ-func">#</span><span class="typ-func">locate</span><span class="typ-punct">(</span>loc <span class="typ-op">=&gt;</span> <span class="typ-punct">{</span>
+  <span class="typ-func">style</span><span class="typ-punct">(</span>styles <span class="typ-op">=&gt;</span> <span class="typ-punct">{</span>
+    <span class="typ-key">let</span> last <span class="typ-op">=</span> <span class="typ-func">query</span><span class="typ-punct">(</span>heading<span class="typ-punct">,</span> loc<span class="typ-punct">)</span><span class="typ-punct">.</span><span class="typ-func">last</span><span class="typ-punct">(</span><span class="typ-punct">)</span>
+    <span class="typ-key">let</span> size <span class="typ-op">=</span> <span class="typ-func">measure</span><span class="typ-punct">(</span>last<span class="typ-punct">.</span>body<span class="typ-punct">,</span> styles<span class="typ-punct">)</span>
+    <span class="typ-punct">[</span>Width is <span class="typ-pol">#</span><span class="typ-pol">size</span><span class="typ-punct">.</span><span class="typ-pol">width</span><span class="typ-punct">]</span>
+  <span class="typ-punct">}</span><span class="typ-punct">)</span>
+<span class="typ-punct">}</span><span class="typ-punct">)</span>
+</code></pre>
+        <p>Using a context expression, this would look like this:</p>
+        <pre><code><span class="typ-key">#</span><span class="typ-key">context</span> <span class="typ-punct">{</span>
+  <span class="typ-key">let</span> last <span class="typ-op">=</span> <span class="typ-func">query</span><span class="typ-punct">(</span>heading<span class="typ-punct">)</span><span class="typ-punct">.</span><span class="typ-func">last</span><span class="typ-punct">(</span><span class="typ-punct">)</span>
+  <span class="typ-key">let</span> size <span class="typ-op">=</span> <span class="typ-func">measure</span><span class="typ-punct">(</span>last<span class="typ-punct">.</span>body<span class="typ-punct">)</span>
+  <span class="typ-punct">[</span>Width is <span class="typ-pol">#</span><span class="typ-pol">size</span><span class="typ-punct">.</span><span class="typ-pol">width</span><span class="typ-punct">]</span>
+<span class="typ-punct">}</span>
+</code></pre>
+        <p>
+          Implementation-wise not that much has changed. User-facing, it is
+          quite different though:
+        </p>
+        <ul>
+          <li>We can omit the <code>loc</code> argument <code>query</code></li>
+          <li>
+            We can omit the <code>styles</code> argument to <code>measure</code>
+          </li>
+          <li>We have only a single nesting level instead of two</li>
+          <li>
+            The expression is syntactically less noisy than one or even two
+            nested closures.
+          </li>
+        </ul>
+        <p>
+          The motivation for <code>context</code> expressions this doesn’t quite
+          end here though. As we discussed before, settable properties affect an
+          element where it is <em>used,</em> not were it is created. This means
+          the value of a settable property is contextual. A “get rule” can thus
+          only work within an established context. Currently, it could be
+          implemented roughly like this:
+        </p>
+        <pre><code><span class="typ-func">#</span><span class="typ-func">style</span><span class="typ-punct">(</span>styles <span class="typ-op">=&gt;</span> styles<span class="typ-punct">.</span><span class="typ-func">get</span><span class="typ-punct">(</span>text<span class="typ-punct">)</span><span class="typ-punct">.</span>fill<span class="typ-punct">)</span>
+</code></pre>
+        <p>Compare this with a <code>context</code> expression:</p>
+        <pre><code><span class="typ-key">#</span><span class="typ-key">context</span> text<span class="typ-punct">.</span>fill
+</code></pre>
+        <p>
+          Particularly for this case, it is very useful to have the context
+          implicit instead of explicit because it greatly reduces the
+          syntactical overhead. And there is one more nice trick: Because
+          contextual values would be a first-class language concept, we could
+          potentially also allow contextual values in other places that can deal
+          with them:
+        </p>
+        <pre><code><span class="typ-comment">// make text darker</span>
+<span class="typ-key">#</span><span class="typ-key">set</span> <span class="typ-func">text</span><span class="typ-punct">(</span>fill<span class="typ-punct">:</span> <span class="typ-key">context</span> text<span class="typ-punct">.</span>fill<span class="typ-punct">.</span><span class="typ-func">darken</span><span class="typ-punct">(</span><span class="typ-num">20%</span><span class="typ-punct">)</span><span class="typ-punct">)</span>
+</code></pre>
+        <p>
+          Just like <code>context</code> could be <em>used</em> in a few more
+          places like that, context could also be <em>provided</em> by other
+          places: Show rules, for instance, run once per occurance of a value in
+          the document. Thus, they could just as well provide context, saving us
+          an extra context expression.
+        </p>
+        <p>
+          Similarly, numberings could be smartly resolved with the correct
+          context. Right now, there is the following
+          <a href="https://github.com/typst/typst/issues/1057">tricky bug</a>:
+          If you define a numbering that internally displays another counter,
+          that counter will show different values depending on where the
+          numbering is applied: In the table of contents, in a reference, etc.
+          We could fix this problem by letting these places provide the correct
+          context.
+        </p>
+        <h3>Locations</h3>
+        <p>
+          Let me come back to locations now. These are somewhat “magic” as an
+          opaque type that gives access to page, x, and y. Perhaps they feel
+          magic because of their naming. They are named after how they are used,
+          not what they really are. If you dig down into the inner workings, a
+          location is really just a <strong>unique ID</strong> for an element.
+          If you write <code>locate(loc =&gt; ..)</code>, then you get back a
+          <code>LocateElem</code> which holds a unique ID. If you query semantic
+          elements like headings, you get access to their unique IDs.
+        </p>
+        <p>
+          Now note that labels are also sort of IDs, just not necessarily
+          unique. I think there is some potential for unification here. We could
+          merge labels and unique IDs: Let Typst generate a unique label and
+          then combine it with a normal named label. Such merged labels would be
+          useful in abstractions that consist of fixed elements that need labels
+          for some automation, but the whole thing might appear multiple times
+          in a document. If we just use normal labels, there is a collision
+          between these instances that we need to handle, and it also might
+          collide with user-defined labels.
+        </p>
+        <p>
+          Interestingly enough, this concept <em>is</em> already used internally
+          in the compiler. The <code>Location</code> type has a
+          <code>.variant(index: usize)</code> method for attaching a well-known
+          location to a generated element. This is used for two-way-linking
+          between citations and bibliography references without tons of
+          back-and-forth introspection.
+        </p>
+        <p>
+          Getting back to context expressions: A function that generates a
+          unique label for us could be just yet another contextual function. The
+          <code>location</code> method on content would be superseded by a
+          function that takes a value and returns its unique ID (if present) as
+          a label. And to get access to <code>page</code>, <code>x</code>,
+          <code>y</code> we would have yet another contextual function that
+          takes a label (or a value with a unique label) and gives its position.
+          And the perfect name for that function is <code>locate</code>. :)
+        </p>
+        <pre><code><span class="typ-key">#</span><span class="typ-key">context</span> <span class="typ-punct">{</span>
+  <span class="typ-key">let</span> elem <span class="typ-op">=</span> <span class="typ-func">query</span><span class="typ-punct">(</span>heading<span class="typ-punct">)</span><span class="typ-punct">.</span><span class="typ-func">first</span><span class="typ-punct">(</span><span class="typ-punct">)</span>
+  <span class="typ-key">let</span> <span class="typ-punct">(</span>x<span class="typ-punct">,</span> y<span class="typ-punct">)</span> <span class="typ-op">=</span> <span class="typ-func">locate</span><span class="typ-punct">(</span>elem<span class="typ-punct">)</span>
+  <span class="typ-punct">[</span>Heading is at (<span class="typ-pol">#</span><span class="typ-pol">x</span>, <span class="typ-pol">#</span><span class="typ-pol">y</span>)!<span class="typ-punct">]</span>
+<span class="typ-punct">}</span>
+</code></pre>
+        <h3>Async/await?</h3>
+        <p>
+          I would like to emphasize once more the central observation: Context
+          values are <strong>not</strong> special because they depend on context
+          that is not available when normal code runs. Rather, they are special
+          because
+          <strong
+            >the code defining the contextual value may need to run multiple
+            times for different contexts.</strong
+          >
+          This makes it distinctly different from something like async/await,
+          where computation is delayed, but still happens just once. While the
+          return value of a <code>context</code> expression is
+          <em>sort of</em> like a <code>Promise</code> or <code>Future</code>,
+          it is different because it may run multiple times. (I’m not sure how
+          this relates to algebraic effects. From my limited understanding, they
+          do allow for multiple resumptions. I am not sure how they fit into
+          this, perhaps this is sort of an algebraic effect.)
+        </p>
+        <p>
+          While we’re at async/await: In theory, we could have syntactic sugar
+          to unnest context and basically pull the remaining scope into a
+          <code>context</code> block. This would be akin to implicit awaiting.
+          However, I do not think this is a good idea for three reasons:
+        </p>
+        <ol>
+          <li>
+            <p>
+              It would mean that any function dealing with contextual things
+              internally would also return a contextual value. It would not be
+              possible to have e.g. a function that returns an array of
+              contextual values.
+            </p>
+          </li>
+          <li>
+            <p>
+              By trying to hide what code may run multiple times, it makes it
+              harder to reason about the interaction of different pieces of
+              code. When a computation diverges into a code segment that may run
+              multiple times, can it ever converge again? Even if algebraic
+              effects are some kind of silver bullet, I don’t see how they could
+              fix that. (I would be happy to stand corrected though!)
+            </p>
+          </li>
+          <li>
+            <p>
+              It hurts efficiency and incremental compilation: Think back to why
+              <code>query</code> currently takes a
+              <code>location</code> parameter to reduce the amount of things it
+              can effect. Allowing top-level desugared context runs into the
+              same issue where a whole module becomes context-dependent. And
+              even if we only allow context access within a function (akin to no
+              top-level await), which would be even more confusing in my
+              opinion, the scope might still be a lot larger than necessary.
+            </p>
+          </li>
+        </ol>
+        <h2>Recap</h2>
+        <p>That’s it. Here’s what we talked about:</p>
+        <ul>
+          <li>What elements are and why we care</li>
+          <li>How we can model elements as types</li>
+          <li>How methods become associated functions</li>
+          <li>
+            The consequences of values and elements being one and the same
+          </li>
+          <li>How context expression can simplify introspection</li>
+          <li>
+            A context-based design for “get rules” with minimal syntactical
+            overhead
+          </li>
+          <li>Why contextual code is special and different from async/await</li>
+        </ul>
+      </article>
+    </main>
+  </body>
+</html>
