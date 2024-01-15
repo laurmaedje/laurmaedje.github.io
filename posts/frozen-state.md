@@ -177,7 +177,7 @@ There are other desirable state-related features that are also affected by the d
 For instance, a related feature request is to be able to isolate some content from the document, so that it's state isn't affected by the remaining document and vice versa.
 I think that this is also something that could be fitted fairly well into the framework discussed above.
 
-Discussion on Discord (Link TBD).
+[Discussion on Discord.](https://discord.com/channels/1054443721975922748/1196509531354701874)
 
 [context]: /posts/types-and-context/
 [`#hide`]: https://typst.app/docs/reference/layout/hide/
