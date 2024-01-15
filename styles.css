@@ -10,6 +10,10 @@ body {
   padding: 20px;
 }
 
+article {
+  margin-block-end: 80px;
+}
+
 header {
   display: flex;
   flex-direction: row;
@@ -55,6 +59,20 @@ h3 {
   color: rgb(71, 71, 71);
 }
 
+h4 {
+  display: inline;
+  color: rgb(71, 71, 71);
+}
+
+h4::after {
+  content: ".";
+}
+
+h4 + p {
+  display: inline;
+  margin-left: 0.15em;
+}
+
 p {
   margin-block: 10px;
 }
@@ -73,7 +91,7 @@ article a {
 }
 
 a:visited {
-  color:rgb(85, 26, 139);
+  color: rgb(85, 26, 139);
 }
 
 a:hover {

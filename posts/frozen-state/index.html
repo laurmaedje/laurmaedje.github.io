@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Frozen State | Laurenz&#x27;s Blog</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Freezing state in Typst and how it could tie in with the context idea."
+    />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Frozen State | Laurenz&#x27;s Blog" />
+    <meta
+      property="og:url"
+      content="https://laurmaedje.github.io/posts/frozen-state"
+    />
+    <meta property="og:site_name" content="Laurenz&#x27;s Blog" />
+    <meta
+      property="og:description"
+      content="Freezing state in Typst and how it could tie in with the context idea."
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <a href="/" class="home">Laurenz&#x27;s Blog</a
+      ><a href="https://github.com/laurmaedje" class="social"
+        ><img src="/assets/github.png" alt="GitHub" width="32" height="32"
+      /></a>
+    </header>
+    <main>
+      <article>
+        <h1>Frozen State</h1>
+        <time date="2024-01-15T00:00:00.000Z">January 15, 2024</time>
+        <p>
+          One thing that comes up from time to time, especially in the context
+          of slide creation, is the idea of <em>freezing</em> state. Consider
+          the following slide snippet written using the Polylux package:
+        </p>
+        <pre><code><span class="typ-key">#</span><span class="typ-key">import</span> <span class="typ-str">&quot;@preview/polylux:0.3.1&quot;</span><span class="typ-punct">:</span> <span class="typ-op">*</span>
+<span class="typ-key">#</span><span class="typ-key">set</span> math<span class="typ-punct">.</span><span class="typ-func">equation</span><span class="typ-punct">(</span>numbering<span class="typ-punct">:</span> <span class="typ-str">&quot;(1)&quot;</span><span class="typ-punct">)</span>
+
+<span class="typ-func">#</span><span class="typ-func">polylux-slide</span><span class="typ-punct">[</span>
+  First, we show: <span class="typ-pol">#</span><span class="typ-pol">pause</span>
+  <span class="typ-math-delim">$</span> x + y = z <span class="typ-math-delim">$</span>   <span class="typ-pol">#</span><span class="typ-pol">pause</span>
+  Then, we continue.
+<span class="typ-punct">]</span>
+</code></pre>
+        <p>
+          Here, we make use of the <code>pause</code> command to generate
+          multiple pages, each of which uncovers more of the slide. If you
+          compile these slides, you’ll see that the equation is numbered with
+          (2) on page 2 and with (3) on page 3. This is of course not what we
+          want.
+        </p>
+        <p>
+          To understand why it happens, we have to understand a bit of how
+          Polylux works internally: When you use the pause feature, Polylux
+          figures out how many pages in total your slide needs. It then
+          generates this number of pages and inserts the full content on each
+          page, but with rules configured that conditionally
+          <a href="https://typst.app/docs/reference/layout/hide/"
+            ><code>#hide</code></a
+          >
+          parts of the content.
+        </p>
+        <p>
+          From Typst’s point of view, Polylux generates three separate equations
+          and hides one of them. Reasonably, it thus gives each of those
+          equations a separate number. Note that this is <em>generally</em> a
+          desirable property: If you store content in a variable and use it
+          multiple times, you get the same result as if you’d have written the
+          content in each of the places (this is called
+          <em>referential transparency</em>). This makes things composable and
+          allows packages to juggle content around and style it “after the
+          fact”. It’s just in some cases like this one that it’s actually
+          semantically the same content, and we need some way to express that in
+          Typst.
+        </p>
+        <h2>Measurement and introspection</h2>
+        <p>
+          What I’ve only realized recently, is that a very similar requirement
+          arises when we <code>measure</code> content that performs
+          introspection. Consider the following snippet:
+        </p>
+        <pre><code><span class="typ-key">#</span><span class="typ-key">let</span> c <span class="typ-op">=</span> <span class="typ-func">counter</span><span class="typ-punct">(</span><span class="typ-str">&quot;key&quot;</span><span class="typ-punct">)</span>
+<span class="typ-pol">#</span><span class="typ-pol">c</span><span class="typ-punct">.</span><span class="typ-func">update</span><span class="typ-punct">(</span><span class="typ-num">1</span><span class="typ-punct">)</span>
+<span class="typ-func">#</span><span class="typ-func">style</span><span class="typ-punct">(</span>styles <span class="typ-op">=&gt;</span> <span class="typ-punct">{</span>
+  <span class="typ-comment">// We retrieve the counter and convert it to spacing</span>
+  <span class="typ-comment">// which we then measure</span>
+  <span class="typ-key">let</span> elem <span class="typ-op">=</span> c<span class="typ-punct">.</span><span class="typ-func">display</span><span class="typ-punct">(</span>n <span class="typ-op">=&gt;</span> n <span class="typ-op">*</span> <span class="typ-func">v</span><span class="typ-punct">(</span><span class="typ-num">10pt</span><span class="typ-punct">)</span><span class="typ-punct">)</span>
+  <span class="typ-key">let</span> height <span class="typ-op">=</span> <span class="typ-func">measure</span><span class="typ-punct">(</span>elem<span class="typ-punct">,</span> styles<span class="typ-punct">)</span><span class="typ-punct">.</span>height
+  <span class="typ-punct">[</span>Height is <span class="typ-pol">#</span><span class="typ-pol">height</span><span class="typ-punct">]</span>
+  c<span class="typ-punct">.</span><span class="typ-func">step</span><span class="typ-punct">(</span><span class="typ-punct">)</span>
+  elem <span class="typ-comment">// try moving or deleting this</span>
+<span class="typ-punct">}</span><span class="typ-punct">)</span>
+<span class="typ-pol">#</span><span class="typ-pol">c</span><span class="typ-punct">.</span><span class="typ-func">step</span><span class="typ-punct">(</span><span class="typ-punct">)</span>
+</code></pre>
+        <p>
+          As-is, this outputs <code>20pt</code> which means <code>n</code> was
+          <code>2</code>. If you delete the line with <code>elem</code>, it
+          suddenly outputs <code>30pt</code>. What is happening here?
+        </p>
+        <p>
+          It turns out that measuring in combination with introspection features
+          yields some interesting results. To understand what is happening here,
+          we first need to understand how counters work internally. Rather than
+          being directly modified through side effects, all mutations and
+          displays of counters and state end up as invisible content somewhere
+          in the document and thus in the final layout. When resolving a
+          <code>.display</code> call, the counter type queries (as in
+          <a href="https://typst.app/docs/reference/introspection/query/"
+            ><code>query</code></a
+          >) for all counter updates in the document <em>before</em> the
+          display’s location. This is just like a query for all headings before
+          a specific point as counter updates are content like headings, just
+          invisible.
+        </p>
+        <p>
+          Given this complete sequence of updates, we can then determine the
+          value at the current location by applying the updates one by one. For
+          example if we have a series of updates <code>.update(2)</code>,
+          <code>update(n =&gt; 3 * n)</code>,
+          <code>update(n =&gt; n - 3)</code>, <code>update(5)</code>, it
+          computes the sequence <code>2, 6, 3, 5</code>. If the determined
+          location of a display call is between the first two updates, it yields
+          <code>2</code>. Similarly, if it is between the last two updates, it
+          yields <code>3</code>. The results thus depend on how Typst determines
+          whether an update is before or after our display when doing the query.
+        </p>
+        <p>
+          So, how does it work? The implementation is actually relatively
+          straight-forward: Typst’s introspection system holds an ordered list
+          of all locatable elements. When doing a “before” query, it finds the
+          index of the cutoff element in the list and extracts all matches up to
+          this index. Crucially, asking for all matches before a non-existent
+          element will just give us all matches.
+        </p>
+        <p>
+          Equipped with this knowledge, let’s look at what happens above.
+          Clearly, the <code>measure</code> call is affected by the position of
+          <code>elem</code> in the real layout:
+        </p>
+        <ul>
+          <li>
+            If the <code>elem</code> is after the first <code>c.step()</code>,
+            we get that one as part of our update list, yielding
+            <code>20pt</code>
+          </li>
+          <li>
+            If <code>elem</code> is deleted, we don’t find it at all and get all
+            counter updates, yielding <code>30pt</code>
+          </li>
+          <li>
+            If <code>elem</code> is moved above the first <code>c.step()</code>,
+            we only get the initial update, yielding <code>10pt</code>
+          </li>
+        </ul>
+        <p>
+          The reason the measurement is affected by the real layout is that the
+          locations (= unique element IDs) assigned to <code>elem</code> during
+          measurement and real layout match up. This is typically what you want
+          because you’re measuring something to determine how to arrange it in a
+          layout of your own. However, it can yield surprising results if you
+          don’t end up putting the measured thing into the document. It is also
+          fundamentally a best-effort approach because Typst can’t always
+          disambiguate how multiple measured elements map to multiple real
+          elements (if multiple ones have the same hash). The current way we do
+          measurements on things with introspection is sadly a bit ill-defined.
+          So far, it typically worked out because the IDs happen to mostly match
+          up in the current implementation.
+        </p>
+        <h2>Circling back</h2>
+        <p>
+          Since the existing design results in some strange measurements results
+          (which can fundamentally only be dealt with on a best-effort basis),
+          maybe the problem lies with the measurement API itself. Perhaps
+          redesigning this API will make our problems go away. What we need is a
+          way to somehow assign a unique identity to content
+          <em>before</em> measuring it so that the desired link between measured
+          elements and the final layout is clear to both users / package authors
+          and Typst. We basically need to tell Typst: “This is the same content
+          no matter where you see it. If it uses counters and state internally,
+          resolve all of them in the same way everywhere.” Sound familiar?
+        </p>
+        <p>
+          This is exactly what we need for the Polylux example from above. Given
+          a way to <code>freeze</code> content, we could put it into the
+          document multiple times and have it be the same every time:
+        </p>
+        <pre><code><span class="typ-key">#</span><span class="typ-key">set</span> math<span class="typ-punct">.</span><span class="typ-func">equation</span><span class="typ-punct">(</span>numbering<span class="typ-punct">:</span> <span class="typ-str">&quot;(1)&quot;</span><span class="typ-punct">)</span>
+<span class="typ-key">#</span><span class="typ-key">context</span> <span class="typ-punct">{</span>
+  <span class="typ-key">let</span> v <span class="typ-op">=</span> <span class="typ-func">freeze</span><span class="typ-punct">(</span><span class="typ-math-delim">$</span> x + y = z <span class="typ-math-delim">$</span><span class="typ-punct">)</span>
+  v <span class="typ-comment">// this will be equation (1)</span>
+  v <span class="typ-comment">// and this, too :)</span>
+<span class="typ-punct">}</span>
+</code></pre>
+        <p>
+          In the same way, we could measure it and Typst would always understand
+          the link between the measured and real content:
+        </p>
+        <pre><code><span class="typ-key">#</span><span class="typ-key">context</span> <span class="typ-punct">{</span>
+  <span class="typ-key">let</span> v <span class="typ-op">=</span> <span class="typ-func">freeze</span><span class="typ-punct">(</span>content<span class="typ-punct">)</span>
+  <span class="typ-comment">// No matter what happens, the</span>
+  <span class="typ-comment">// measurement will observe state</span>
+  <span class="typ-comment">// like `v` does below.</span>
+  <span class="typ-key">let</span> size <span class="typ-op">=</span> <span class="typ-func">measure</span><span class="typ-punct">(</span>v<span class="typ-punct">)</span>
+  v
+<span class="typ-punct">}</span>
+</code></pre>
+        <h2>Challenges</h2>
+        <p>
+          The hard question now is: How can we implement this
+          <code>freeze</code> function? We somehow need to ensure that across
+          all usages of the frozen content, the displayed elements end up having
+          the same locations / IDs. This is rather incompatible with the current
+          way unique IDs are assigned. The good news is that there are
+          independently motivated plans to change the way they are assigned.
+          (The current implementation requires some mutable state in the layout
+          engine, which prevents parallelization. If we can get rid of this
+          state, it becomes <em>trivial</em> to parallelize the layout engine.)
+        </p>
+        <p>
+          The new approach is basically to assign an element’s ID based on a
+          hash of its parent’s ID + the element’s syntax span and type + local
+          disambiguation among elements where all the previous things are the
+          same. It’s a form of hierarchical hashing. This approach yields unique
+          IDs that are pretty stable across multiple compilations (which is
+          important for incremental compilation). Moreover, it only requires a
+          minimal amount of local state and enables parallelization.
+        </p>
+        <p>
+          The approach is also a lot more compatible with the desire for a
+          <code>freeze</code> function. If we freeze a particular element’s ID
+          and put it into the document twice, all its children are automatically
+          assigned IDs that match up across the two usages. (This is the part
+          that is not true for the current implementation, because the children
+          would be automatically globally disambiguated.) However, at the same
+          time, IDs most of the time <em>won’t</em> match up by luck anymore
+          when doing measurement, so applied naively <code>measure</code> breaks
+          pretty badly. So, essentially, the new approach and frozen state kind
+          of depend on each other (and that realization is what triggered this
+          post).
+        </p>
+        <p>
+          The remaining challenge is to assign a unique ID to an element when
+          freezing it. This is actually rather tricky in a language with pure
+          functions like Typst. The
+          <a href="/posts/types-and-context/">context</a> idea could help us
+          here though. Since measurement needs to happen within a style callback
+          / context anyway, we can leverage that context to get most of our
+          desired uniqueness (a context in itself always gets a unique ID). We
+          can get further uniqueness from the call-site syntax span and content
+          hash where we assign the ID. There is still the possibility for a
+          collision when dealing with hash-equal content in a loop, as shown in
+          the example below:
+        </p>
+        <pre><code><span class="typ-key">#</span><span class="typ-key">context</span> <span class="typ-punct">{</span>
+  <span class="typ-key">let</span> a <span class="typ-op">=</span> <span class="typ-punct">[</span><span class="typ-heading">= My one heading</span><span class="typ-punct">]</span>
+  <span class="typ-key">let</span> b <span class="typ-op">=</span> <span class="typ-punct">[</span><span class="typ-heading">= My other heading</span><span class="typ-punct">]</span>
+  <span class="typ-key">let</span> vs <span class="typ-op">=</span> <span class="typ-punct">(</span>a<span class="typ-punct">,</span> a<span class="typ-punct">,</span> b<span class="typ-punct">)</span>
+  vs<span class="typ-punct">.</span><span class="typ-func">map</span><span class="typ-punct">(</span>freeze<span class="typ-punct">)</span><span class="typ-punct">.</span><span class="typ-func">join</span><span class="typ-punct">(</span><span class="typ-punct">)</span>
+<span class="typ-punct">}</span>
+</code></pre>
+        <p>
+          In this example, the context, call-site syntax span, and content hash
+          for both <code>a</code> headings is the same, so
+          <code>freeze</code> has no choice but to return the same content. As a
+          result, the first two headings would be identified as one and the same
+          and get the same number. The second, however, could be identified as
+          different since the content is defined at a different syntax node and
+          thus has a different span. In the same way, we could identify two
+          syntactically separate freeze calls of the same content as distinct.
+          We’d face a similar challenge when we would use syntax spans to
+          provide an automatic identify to counters/states (<a
+            href="https://github.com/typst/typst/issues/2425"
+            >see the issue on anonymous states</a
+          >). For the rare case where everything matches up, manual
+          disambiguation by the caller could be an option (i.e. passing a number
+          or string to <code>freeze</code> which is incorporated into the ID
+          hash). Still, the whole thing isn’t totally satisfactory.
+        </p>
+        <p>
+          A second challenge for the Polylux example is the fact that
+          <code>freeze</code> would freeze <em>everything.</em> Polylux also
+          manages some internal state to figure out which slide it is currently
+          processing. If everything is frozen, that state is also frozen, so two
+          different slides showing the same frozen content couldn’t show
+          different things. The
+          <a href="https://github.com/typst/typst/issues/1841"
+            >issue on freezing state</a
+          >
+          proposed an <code>exclude</code> mechanism to deal with this. However,
+          I have no idea how to implement that. An alternative solution to this
+          problem could be get rules. Assuming that <code>freeze</code> would
+          only freeze the identity used for introspection and not the active
+          styles, custom get rules could be used to communicate arbitrary
+          information like slide numbers down the content tree.
+        </p>
+        <p>
+          The presented design in this post is far from final. The post is
+          primarily intended as an initial exploration of potential foundations
+          for a state freezing functionality. I’m thinking of the ideas as sort
+          of Lego bricks: There are various considerations, trade-offs, and
+          challenges at play, so we need to find the right way to assemble the
+          bricks. But the assembly doesn’t affect just state freezing: There are
+          other desirable state-related features that are also affected by the
+          decision we make here: For instance, a related feature request is to
+          be able to isolate some content from the document, so that it’s state
+          isn’t affected by the remaining document and vice versa. I think that
+          this is also something that could be fitted fairly well into the
+          framework discussed above.
+        </p>
+        <p>Discussion on Discord (Link TBD).</p>
+      </article>
+    </main>
+  </body>
+</html>
