@@ -3,11 +3,19 @@
 }
 
 body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  box-sizing: border-box;
   max-width: 750px;
   font-family: sans-serif;
   line-height: 1.5;
   margin: auto;
   padding: 20px;
+}
+
+main {
+  flex-grow: 1;
 }
 
 article {
@@ -28,6 +36,11 @@ header > a.home {
 header > a.social > img {
   width: 24px;
   height: 24px;
+}
+
+footer {
+  margin-top: 40px;
+  font-size: 0.9em;
 }
 
 ul.posts {

@@ -23,8 +23,9 @@ const markdown = require("markdown-it")({
   highlight: (src, lang) => {
     if (lang === "typ") {
       const code = child_process
-        .execFileSync("./highlight/target/debug/highlight", {
+        .execSync("cargo run --manifest-path highlight/Cargo.toml", {
           input: src,
+          stdio: ["pipe", "pipe", "ignore"],
         })
         .toString("utf8");
       return `<pre>${code}</pre>`;
@@ -93,7 +94,7 @@ function build() {
     })
     .sort((a, b) => a.date - b.date);
 
-  // Setup output directory, write ahrefs file and copy style file.
+  // Setups output directory, write ahrefs file and copy style file.
   mkdir("dist");
   fs.writeFileSync(
     `dist/ahrefs_${AHREFS}`,
@@ -105,6 +106,11 @@ function build() {
   mkdir(`dist/assets`);
   for (const filename of fs.readdirSync("assets")) {
     fs.copyFileSync(`assets/${filename}`, `dist/assets/${filename}`);
+  }
+
+  // Copy public files.
+  for (const filename of fs.readdirSync("public")) {
+    fs.copyFileSync(`public/${filename}`, `dist/${filename}`);
   }
 
   // Generate posts.
@@ -211,6 +217,13 @@ function Base({ type, title, description, url, children }) {
         </header>
         <main>{children}</main>
         {live}
+        {url == "/" && (
+          <footer>
+            <a href="/programmable-markup-language-for-typesetting.pdf">
+              My Thesis
+            </a>
+          </footer>
+        )}
       </body>
     </html>
   );
