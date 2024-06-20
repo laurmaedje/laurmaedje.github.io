@@ -90,6 +90,7 @@ function build() {
         title: meta.title,
         date: moment(meta.date).utc(),
         description: meta.description,
+        hidden: meta.hidden || false,
       };
     })
     .sort((a, b) => a.date - b.date);
@@ -144,6 +145,7 @@ function Index({ posts }) {
   const items = posts
     .slice()
     .reverse()
+    .filter((post) => !post.hidden)
     .map((post) => (
       <li key={post.name}>
         <h2>
