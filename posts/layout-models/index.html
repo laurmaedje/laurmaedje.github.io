@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="An exploration of the layout engines of (La)TeX and Typst."
+      content="An exploration of the layout models of TeX and Typst."
     />
     <meta property="og:type" content="article" />
     <meta
@@ -20,7 +20,7 @@
     <meta property="og:site_name" content="Laurenz&#x27;s Blog" />
     <meta
       property="og:description"
-      content="An exploration of the layout engines of (La)TeX and Typst."
+      content="An exploration of the layout models of TeX and Typst."
     />
     <link rel="stylesheet" href="/styles.css" />
   </head>
@@ -34,10 +34,16 @@
     <main>
       <article>
         <h1>TeX and Typst: Layout Models</h1>
-        <time date="2024-06-20T00:00:00.000Z">June 20, 2024</time>
+        <time date="2024-06-21T00:00:00.000Z">June 21, 2024</time>
         <p>
-          This post explores the layout engines of TeX/LaTeX and Typst and then
-          presents some thoughts about the future of Typst’s engine.
+          Lately, I’ve been pondering the ways in which Typst’s layout model
+          differs from TeX’s. While Typst adopts parts of TeX’s model, in
+          particular the paragraph layout algorithm, there are also significant
+          differences. Most of these are related to block-level layout — things
+          like line placement, widow &amp; orphan prevention, tables, and
+          floats. I want to use this post to explore these differences, to
+          identify the benefits and limitations of both models, and to present
+          my thinking on the future of Typst’s layout engine.
         </p>
         <h2>Basics</h2>
         <p>
@@ -106,9 +112,9 @@
           Typst adopts some of TeX’s ideas, but differs significantly in other
           aspects. The central concept of Typst’s layout engine is the
           <em>region:</em> A region describes a shape into which elements can be
-          laid out. A layouter receives a sequence of regions into which it
-          shall lay out its contents. The result of this is a number of
-          <em>frames,</em> which are very similar to TeX’s boxes.
+          laid out. A layouter receives a (potentially infinite) sequence of
+          regions into which it shall lay out its contents. The result of this
+          is a number of <em>frames,</em> which are just like TeX’s boxes.
         </p>
         <p>
           When content is laid out, it is first <em>realized</em> into a uniform
@@ -118,9 +124,11 @@
         </p>
         <p>
           When laying out its children, the flow keeps adjusting the regions to
-          account for already laid out content. If it visits a block child
-          (anything that shows itself as a block, which includes e.g. tables),
-          this child is laid out with the current regions.
+          account for already laid out content. For instance, if we’ve already
+          visited two paragraphs that took two thirds of the available space of
+          the first page, a subsequent table would get a first region with the
+          remaining third of the space followed by an infinite sequence of
+          page-sized regions.
         </p>
         <p>
           For implementation reasons, Typst currently restricts the general
@@ -270,7 +278,7 @@
         </p>
         <p>
           This time, things look better for Typst. As demonstrated in the figure
-          before, Typst is capable of breaking the cells at the page boundary.
+          below, Typst is capable of breaking the cells at the page boundary.
           This is possible because, during its layout, the table knows exactly
           how much space is left on the page and can react to it.
         </p>
@@ -300,18 +308,19 @@
         <p>
           As we’ve seen, TeX’s model falls short on everything that requires
           knowledge of exact vertical positions: Flexible page sizes, chained
-          containers, richly colliding floats, breakable tables, and more.
+          containers, richly colliding floats, breakable tables, grid-based
+          typesetting, and more.
         </p>
         <p>
-          Typst’s model suffers partly from the same and partly from other
-          problems. The concept of regions in theory allows us to solve a number
-          of problems that TeX cannot solve — flexible page sizes, container
-          chaining, colliding floats — but the restrictions Typst puts upon them
-          mean they cannot realize their potential. At the same time, regions
-          introduce new problems: By passing down exact positions to
-          sublayouters, it becomes harder to optimize the layout by moving
-          things around. This lets Typst fall short on widow &amp; orphan
-          prevention, vertical justification, and more.
+          Typst’s current model suffers partly from the same and partly from
+          other problems. The concept of regions in theory allows us to solve a
+          number of problems that TeX cannot solve — flexible page sizes,
+          container chaining, colliding floats — but the restrictions Typst puts
+          upon them mean they cannot yet realize their full potential. At the
+          same time, regions introduce new problems: By passing down exact
+          positions to sublayouters, it becomes harder to optimize the layout by
+          moving things around. This lets Typst currently fall short on widow
+          &amp; orphan prevention, vertical justification, and more.
         </p>
         <p>
           So, where do we go from here? Do we need to embrace the limitations of
@@ -343,11 +352,11 @@
         <p>
           However, up until recently Typst still held a small piece of global
           mutable state during layout, which was required to make introspection
-          work. With this state, it <em>was</em> possibly to relayout, but much
+          work. With this state, it <em>was</em> possible to relayout, but much
           care was required, and it was a frequent cause of bugs. Fortunately,
           this engine limitation has
           <a href="https://github.com/typst/typst/pull/4352"
-            >finally been fixed recently</a
+            >finally been fixed recently,</a
           >
           making layout 100% pure and free of side effects.
         </p>
@@ -384,16 +393,16 @@
           A practical example is vertically centering a paragraph that flows
           around an absolutely positioned shape. We cannot mathematically solve
           for the vertical starting position — we just have to try and see,
-          essentially performing a binary search over the Y space.
+          essentially performing a binary search over the Y axis.
         </p>
         <p>
           Unfortunately, we have no guarantee that our result converges to a
           fixed position. We can, for instance, easily get into the situation
-          where the result oscillates between two positions. I am yet not sure
+          where the result oscillates between two positions. I am not yet sure
           how big of a problem this will be in practice. My gut feeling is to
           just stop iterating (a) when we stop improving or (b) when we reach a
-          fixed limit will be sufficient, and that this will be enough for
-          practical purposes. But we’ll have to see.
+          fixed limit, and that this will be sufficient for practical purposes.
+          But we’ll have to see.
         </p>
         <h3>Performance</h3>
         <p>
@@ -424,10 +433,11 @@
         <p>
           The feeling that Typst requires a more relayout-based approach was
           there for a while. But so far I hadn’t seen the connection between
-          relayout and regions: That, for great typesetting results, regions
-          require relayout. We <em>buy</em> the flexibility to have certain
-          complex layouts by introducing the complexity of regions. So far we
-          have paid the costs of regions without reaping their rewards.
+          relayout and regions: That, for great typesetting results,
+          <strong>regions require relayout.</strong> We <em>buy</em> the
+          flexibility to have certain complex layouts by introducing the
+          complexity of regions. So far we have paid the costs of regions
+          without reaping their rewards.
         </p>
         <p>
           With the layout engine now fully pure (and
