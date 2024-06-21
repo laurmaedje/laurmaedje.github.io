@@ -43,6 +43,23 @@ footer {
   font-size: 0.9em;
 }
 
+footer nav {
+  display: flex;
+  gap: 20px;
+}
+
+footer nav a {
+  color: gray;
+}
+
+footer nav a:visited {
+  color: gray;
+}
+
+footer nav a:hover {
+  text-decoration: underline;
+}
+
 ul.posts {
   list-style-type: none;
   padding-left: 0;

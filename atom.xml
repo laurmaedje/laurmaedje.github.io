@@ -1,0 +1,1151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+    <id>https://laurmaedje.github.io</id>
+    <title>Laurenz's Blog</title>
+    <updated>2024-06-21T09:40:05.360Z</updated>
+    <generator>https://github.com/jpmonette/feed</generator>
+    <author>
+        <name>Laurenz Mädje</name>
+        <email>laurmaedje@gmail.com</email>
+        <uri>https://laurmaedje.github.io</uri>
+    </author>
+    <link rel="alternate" href="https://laurmaedje.github.io"/>
+    <link rel="self" href="https://laurmaedje.github.io/atom.xml"/>
+    <subtitle>Blog about my coding projects.</subtitle>
+    <rights>All rights reserved 2024, Laurenz Mädje</rights>
+    <entry>
+        <title type="html"><![CDATA[How To Put 30 Languages Into 1.1MB]]></title>
+        <id>/posts/hypher</id>
+        <link href="/posts/hypher"/>
+        <updated>2022-07-23T00:00:00.000Z</updated>
+        <summary type="html"><![CDATA[A post about hypher, a fast hyphenation library for Rust. This library converts LaTeX hyphenation patterns into compact finite state machines that can be traversed without any upfront loading. The result is faster and leaner than previous crates.]]></summary>
+        <content type="html"><![CDATA[<p><em>This blog post is about <a href="https://github.com/typst/hypher"><code>hypher</code></a>, a fast hyphenation library for Rust.</em></p>
+<p>I’m currently working on a pure-rust LaTeX alternative called <a href="https://typst.app">Typst</a>.
+To obtain justification results on par with LaTeX, Typst needs support for hyphenation.
+A quick search on <a href="https://docs.rs">docs.rs</a> showed that there’s only really one hyphenation library, fittingly called <a href="https://github.com/tapeinosyne/hyphenation"><code>hyphenation</code></a>.
+All other crates I’ve found were small variations of this crate.
+The hyphenation crate has a lot of functionality and supports many languages.
+However, it also has sizable binary overhead when you embed the hyphenation patterns (2.8MB).
+While you can load patterns at runtime, distributing the pattern files separately is so much more complicated than just embedding them.</p>
+<p>A specific pain point I had with hyphenation was that I needed to hold on to the loaded, heap-allocated language dictionaries.
+In my case, the text was pre-segmented into “words” (string segments between two <a href="https://unicode.org/reports/tr14/">Unicode line break opportunities</a>) and the language could be different for each word.
+Thus, I would’ve either had to reload the patterns for each word (slow) or set up some caching solution.
+Which is certainly possible, but I had some problems getting it to work because the hyphenating iterator kept borrows into the caching hash map.</p>
+<p>So, at this point I decided to build a new crate with the following goals:
+No allocations, no loading at runtime, less binary overhead and no dependencies (why not).
+It looks like this:</p>
+<pre><code class="language-rust"><span class="hljs-keyword">use</span> hypher::{hyphenate, Lang};
+
+<span class="hljs-keyword">let</span> <span class="hljs-variable">syllables</span> = <span class="hljs-title function_ invoke__">hyphenate</span>(<span class="hljs-string">&quot;extensive&quot;</span>, Lang::English);
+<span class="hljs-built_in">assert_eq!</span>(syllables.<span class="hljs-title function_ invoke__">join</span>(<span class="hljs-string">&quot;-&quot;</span>), <span class="hljs-string">&quot;ex-ten-sive&quot;</span>);
+</code></pre>
+<p>(And that’s almost the whole API surface.)</p>
+<h2>Hyphenating words</h2>
+<p>So, how do we actually hyphenate stuff?
+Turns out that there aren’t really lists of hyphenated words that are available for free.
+So even with a new, let’s say ML-based algorithm, we lack the data to make it work.
+(Such an approach would definitely be interesting, although I’m guessing the models would be quite large.)
+After a bit of research, it seemed that using TeX patterns is still the way to go.
+TeX patterns are, in principle, generated from word lists with the <a href="https://ctan.org/pkg/patgen?lang=de">patgen</a> tool, but many were tweaked by native speakers over the decades.
+The algorithms for dealing with the patterns go all the way back to Liang’s 1983 thesis <a href="https://tug.org/docs/liang/liang-thesis.pdf"><em>Word Hy-phen-a-tion by Com-put-er</em></a>.</p>
+<p>The general idea of the patterns is the following:
+There are <em>hyphenating</em> and <em>inhibiting</em> patterns.
+A hyphenating pattern says something like “if you see this sequence of letters, you can hyphenate here”.
+An inhibiting pattern is the opposite: “If you see this sequence, don’t hyphenate here!”
+There are multiple levels of patterns:
+The first level of patterns is hyphenating and defines broad rules like “you can hyphenate between two successive 'c’s.”
+The second level of patterns is inhibiting and handles exceptions from the broad rules.
+And, you guessed it, the third level is again hyphenating and  handles the exceptions from the exceptions.</p>
+<p>The pattern files are encoded in a simple text format:
+Letters are just letters and a number between two letters designates a point of hyphenation or inhibition.
+An odd number specifies a point of hyphenation and an even number one of inhibition.
+This goes up to a maximum level of 9.
+Some pattern include dots to indicate that the pattern should only match at the start or end of the word.</p>
+<p>Now, to find out how to hyphenate a word, we first need a zero-initialized array of levels with length one less than that of the word (one entry for each point between two letters).
+Then, we need to find all patterns that match a substring of our word and update the level array with their levels.
+Updating always means taking the maximum of the existing entry and the number in the pattern, so that in the end, we get the result of the strongest pattern.
+Finally, the possible hyphenation points lie at the odd levels in the array.
+The example below illustrates this:</p>
+<p><img
+  src="/assets/hyphenate.svg"
+  alt="Visualization of how to hyphenate the word 'hyphenate'"
+  width="400"
+  height="250"
+/></p>
+<h2>Tries and state machines</h2>
+<p>So far so good.
+We know the general idea, but an important question remains:
+How do we find all matching patterns?
+While we could store the patterns in a hashmap and iterate over all substrings, this would kind of defeat the point of this blog post.
+<em>We want performance.</em></p>
+<p>Luckily, Liang’s thesis also contains efficient algorithms to work with the patterns.
+The general idea is to create a <em>trie</em>, essentially a tree-shaped finite state machine, to encode the patterns.
+Each path from the root of such a trie to an accepting state encodes one pattern.
+The figure below shows an example for the seven patterns from the example above (accepting states have double borders).
+You can see the pattern <code>n2at</code> being reflected by the topmost path through the trie.
+We can easily build such a trie by iterating over the patterns, trying to walk each pattern in the trie and adding states and transitions as necessary.</p>
+<p><img
+  src="/assets/state-machine.svg"
+  alt="State machine for the seven previously seen patterns"
+  width="400"
+  height="220"
+/></p>
+<p>What is still missing from this illustration though is the levels!
+How does that work?
+Since there is a one-to-one relationship between patterns and accepting states, we can simply associate the levels for a pattern with the accepting state.</p>
+<p>In the example above, I have numbered the accepting states with Roman numerals so that we can write down the levels for each one.
+A pattern with n letters can have n+1 levels:
+Before the first letter, between each pair of letters and after the last letter.
+If there isn’t a number between two letters, it’s the same as if there was a zero in between.
+This way, we get the following result:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">State</th>
+<th style="text-align:left">Pattern</th>
+<th style="text-align:left">Levels</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">I</td>
+<td style="text-align:left"><code>1na</code></td>
+<td style="text-align:left"><code>[1, 0, 0]</code></td>
+</tr>
+<tr>
+<td style="text-align:left">II</td>
+<td style="text-align:left"><code>n2at</code></td>
+<td style="text-align:left"><code>[0, 2, 0, 0]</code></td>
+</tr>
+<tr>
+<td style="text-align:left">III</td>
+<td style="text-align:left"><code>he2n</code></td>
+<td style="text-align:left"><code>[0, 0, 2, 0]</code></td>
+</tr>
+<tr>
+<td style="text-align:left">IV</td>
+<td style="text-align:left"><code>hena4</code></td>
+<td style="text-align:left"><code>[0, 0, 0, 0, 4]</code></td>
+</tr>
+<tr>
+<td style="text-align:left">V</td>
+<td style="text-align:left"><code>hen5at</code></td>
+<td style="text-align:left"><code>[0, 0, 0, 5, 0, 0]</code></td>
+</tr>
+<tr>
+<td style="text-align:left">VI</td>
+<td style="text-align:left"><code>hy3ph</code></td>
+<td style="text-align:left"><code>[0, 0, 3, 0, 0]</code></td>
+</tr>
+<tr>
+<td style="text-align:left">VII</td>
+<td style="text-align:left"><code>4te.</code></td>
+<td style="text-align:left"><code>[4, 0, 0, 0]</code></td>
+</tr>
+</tbody>
+</table>
+<p>Now, given a trie with levels, how do we hyphenate a word?
+We simply start a trie walk at each letter of the word and update the level array with the levels of each accepting state we meet.
+This way, we once again find all patterns that match any substring in the word, but much more efficiently!</p>
+<hr>
+<p>You can think about tries like this:
+They allow us to efficiently encode <em>shared prefixes</em> of the patterns.
+But we can even go one step further and also profit from <em>shared suffixes.</em>
+This turns the trie into a finite state machine.
+To do that, we have to find <em>ends</em> of walks which are the same.
+In the example above, this would almost work for the two <code>a-t</code> walks ending in <code>II</code> and <code>V</code>.
+However, it unfortunately doesn’t in this case because the levels associated with <code>II</code> and <code>V</code>  are different.
+For more details on tries, finite state machines and suffix compression, read <a href="https://blog.burntsushi.net/transducers/">this very interesting blog post.</a></p>
+<hr>
+<h2>Encoding state machines compactly</h2>
+<p>All that is left to do is to compactly encode our state machine into bytes that we can embed into the binary.
+For this, I took some inspiration from <a href="https://github.com/BurntSushi/regex-automata"><code>regex-automata</code></a>, which makes heavy use of all kinds of automatons.</p>
+<p>In our case, each state consists of transitions and optionally levels for accepting states.
+For each transition, we have a letter and a target state.
+Well actually, now is maybe a good time to bring up that we don’t actually deal with letters.
+Rather, we build our state machine over UTF-8 bytes.
+This works just as well, but is much easier to encode compactly.
+And when hyphenating, we then of course only start trie walks at UTF-8 codepoint boundaries.</p>
+<p>Back to the states:
+To encode transitions, we lay out two parallel arrays.
+The first contains each byte for which there is a transition and the second contains the <em>address delta</em> to the state we should transition into for this byte.
+Each state has an <em>address:</em> its byte offset in the whole encoded machine.
+Transition addresses are always encoded relative to the origin state as the delta is often much smaller than the absolute address.
+To get maximum profit out of this, we further use a variable length address coding. The address array is either an <code>[i8]</code>, <code>[i16]</code> or <code>[i24]</code> depending on the largest delta.
+Overall, a state’s bitstream encoding looks like this:</p>
+<p><img
+  src="/assets/state-encoding.svg"
+  alt="Binary state encoding"
+  width="400"
+  height="320"
+/></p>
+<p>Now, the levels.
+If a state is accepting, it contains an additional <em>offset</em> and a <em>length</em> for the levels.
+The (offset, length) pair locates a slice of items in an additional array shared by all states.
+Each item in the level slice corresponds to one number in the state’s pattern.
+A level item consists of two parts: the distance of the level from the start of the word or previous level, and the level number.
+We again use the trick of making the distances relative to make them smaller.
+It turns out that there is no relative <code>distance</code> larger than 24 and no <code>level</code> larger than 9 in the patterns.
+This means we can cramp both into a single byte!
+We can’t directly shift and bitor these two values into 8 bits (distance would need 5 bits and level 4 bits).
+However, there are still only 25 * 10 = 250 combinations, which is less than 256. So we can fit it into one byte like this:</p>
+<pre><code class="language-rust"><span class="hljs-keyword">fn</span> <span class="hljs-title function_">pack</span>(dist: <span class="hljs-type">u8</span>, level: <span class="hljs-type">u8</span>) <span class="hljs-punctuation">-&gt;</span> <span class="hljs-type">u8</span> {
+    <span class="hljs-built_in">assert!</span>(dist &lt; <span class="hljs-number">25</span>, <span class="hljs-string">&quot;too high distance&quot;</span>);
+    <span class="hljs-built_in">assert!</span>(level &lt; <span class="hljs-number">10</span>, <span class="hljs-string">&quot;too high level&quot;</span>);
+    dist * <span class="hljs-number">10</span> + level
+}
+
+<span class="hljs-keyword">fn</span> <span class="hljs-title function_">unpack</span>(packed: <span class="hljs-type">u8</span>) <span class="hljs-punctuation">-&gt;</span> (<span class="hljs-type">u8</span>, <span class="hljs-type">u8</span>) {
+    <span class="hljs-keyword">let</span> <span class="hljs-variable">dist</span> = packed / <span class="hljs-number">10</span>;
+    <span class="hljs-keyword">let</span> <span class="hljs-variable">level</span> = packed % <span class="hljs-number">10</span>;
+    (dist, level)
+}
+</code></pre>
+<p>If the encoded level slice for two states is the same, it is only stored once in the shared array, saving even more precious space.</p>
+<h2>Finishing up</h2>
+<p>At runtime, we now don’t need to prepare or load anything.
+We can just lazily decode the embedded automaton as we’re executing it.
+And to eliminate the last allocation, we can even stack allocate the level array if the word isn’t too long (&lt;= 39 bytes in <code>hypher</code>).</p>
+<p>Regarding API, I opted for a free-standing method <code>hyphenate(&amp;str, Lang) -&gt; Syllables&lt;'_&gt;</code> as I feel that it is much more discoverable than a method on <code>Lang</code>.
+<code>Syllables</code> is a hand-written iterator that segments the string based on the level array.
+I also always enjoy when a crate makes my job as simple as a possible.
+Therefore, I added a <code>join</code> method to <code>Syllables</code> so that you quickly add in some (soft) hyphens.</p>
+<p>The tries are constructed and encoded with a build script.
+As that script really took its time in debug builds, I added this to my <code>Cargo.toml</code> to somewhat optimize the process.</p>
+<pre><code class="language-toml"><span class="hljs-section">[profile.dev.build-override]</span>
+<span class="hljs-attr">opt-level</span> = <span class="hljs-number">1</span>
+</code></pre>
+<p>Regarding binary size:
+1.1MB isn’t that much, but there are also many applications where you only want to hyphenate English.
+For this, I added two features <code>full</code> and <code>english</code> with <code>full</code> being enabled by default.
+Dropping <code>all</code> and adding <code>english</code> brings the overhead down to 27KB.
+While I don’t think its great to favor English like that (I’m not a native English speaker), I also felt that adding one feature per language didn’t carry its weight.</p>
+<pre><code class="language-toml"><span class="hljs-section">[features]</span>
+<span class="hljs-attr">default</span> = [<span class="hljs-string">&quot;full&quot;</span>]
+<span class="hljs-attr">full</span> = [<span class="hljs-string">&quot;english&quot;</span>]
+<span class="hljs-attr">english</span> = []
+</code></pre>
+<p>(Update: <a href="https://github.com/typst/hypher/pull/3">There’s now one feature per language.</a>)</p>
+<h2>Benchmarks</h2>
+<p>Now, let’s very briefly compare <a href="https://github.com/typst/hypher"><code>hypher</code></a> with <a href="https://github.com/tapeinosyne/hyphenation"><code>hyphenation</code></a>.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Task</th>
+<th style="text-align:right">hypher</th>
+<th style="text-align:right">hyphenation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">Hyphenating <code>extensive</code> (english)</td>
+<td style="text-align:right">356ns</td>
+<td style="text-align:right">698ns</td>
+</tr>
+<tr>
+<td style="text-align:left">Hyphenating <code>διαμερίσματα</code> (greek)</td>
+<td style="text-align:right">503ns</td>
+<td style="text-align:right">1121ns</td>
+</tr>
+<tr>
+<td style="text-align:left">Loading the english patterns</td>
+<td style="text-align:right">0us</td>
+<td style="text-align:right">151us</td>
+</tr>
+<tr>
+<td style="text-align:left">Loading the greek patterns</td>
+<td style="text-align:right">0us</td>
+<td style="text-align:right">0.826us</td>
+</tr>
+</tbody>
+</table>
+<p>For these two test cases, hypher is about 2x as fast as hyphenation.
+Moreover, the loading overhead of hyphenation is quite large in comparison to hyphenating a single word, at least for English.
+All benchmarks were executed on ARM, Apple M1.</p>
+<p>The direct overhead of embedding is ~1.1MB for hypher and ~2.8 MB for hyphenation.
+However, this comparison is unfair to hyphenation as I dropped some languages from hypher.
+Over the decades, quite a lot of TeX pattern files have amassed.
+For many of these, I couldn’t even find any evidence that hyphenation is used for these languages, so I removed them.
+Furthermore, I wanted <code>hypher</code> to be permissively licensed.
+Therefore, it unfortunately does not support languages for which the only available patterns have GPL-like licenses.
+There are a few of those, but not too many.
+In a fairer comparison where only the common languages are considered, hypher’s encoding is still ~12% more compact than hyphenation’s.</p>
+<p>That’s it, thank you for reading!
+Also, <a href="https://typst.app">take a look at Typst</a> if you’re interested.</p>
+<p>Discussion on <a href="https://www.reddit.com/r/rust/comments/w683br/how_to_put_30_languages_into_11mb/">r/rust</a>.</p>
+]]></content>
+        <author>
+            <name>Laurenz Mädje</name>
+            <email>laurmaedje@gmail.com</email>
+            <uri>https://laurmaedje.github.io</uri>
+        </author>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[What If LaTeX Had Instant Preview?]]></title>
+        <id>/posts/comemo</id>
+        <link href="/posts/comemo"/>
+        <updated>2022-10-15T00:00:00.000Z</updated>
+        <summary type="html"><![CDATA[A post about how incremental compilation works in the modern LaTeX alternative Typst.]]></summary>
+        <content type="html"><![CDATA[<p>In WYSIWYG tools like Word and Google Docs, users are accustomed to instantly seeing the results of their edits.
+LaTeX users, in contrast, still have to wait anywhere between seconds and half a minute to see the preview for complex documents.
+While this might not be a big deal for experienced users writing structural markup, it’s a big hurdle for beginners.
+And even for certified TeXperts, it hurts with experimentation and positioning adjustments.
+Have you ever compiled a document five times in a row while trying to figure out the optimal size of an image?
+This is clearly not an acceptable situation.</p>
+<p>I’m currently working on a modern LaTeX alternative called <a href="https://typst.app">Typst</a>.
+With Typst, one of our overarching goals was to provide true “instant preview.”
+Or more specifically:
+A preview whose refresh time is proportional to the size of a performed edit.
+It’s fine for an initial compile of a big document to take a few seconds, but subsequent compilations after minor edits shouldn’t.</p>
+<h2>Memoization</h2>
+<p>How we do this?
+Well, we can’t start from scratch in every compilation.
+Somehow we need to reuse partial results throughout multiple compilations.
+The simplest way to do this is with <em>memoization:</em>
+By caching a function’s output, so that it only needs to be executed once per unique set of arguments.
+A typical example of a function that is amenable to memoization is the fibonacci sequence:</p>
+<pre><code class="language-rust"><span class="hljs-keyword">fn</span> <span class="hljs-title function_">fib</span>(n: <span class="hljs-type">u64</span>) <span class="hljs-punctuation">-&gt;</span> <span class="hljs-type">u64</span> {
+    <span class="hljs-keyword">match</span> n {
+        <span class="hljs-number">0</span> =&gt; <span class="hljs-number">0</span>,
+        <span class="hljs-number">1</span> =&gt; <span class="hljs-number">1</span>,
+        n =&gt; <span class="hljs-title function_ invoke__">fib</span>(n-<span class="hljs-number">1</span>) + <span class="hljs-title function_ invoke__">fib</span>(n-<span class="hljs-number">2</span>),
+    }
+}
+</code></pre>
+<p>In its naive recursive variant, executing this function takes exponential time.
+With memoization, however, each unique call to <code>fib</code> will be evaluated just once.
+This way, we can cut the running time down from exponential to linear.
+In essence, memoization trades memory for speed.
+And in Rust we can easily implement this as a <code>#[memoize]</code> attribute macro that we can just slap onto our function.
+Sounds great, right?</p>
+<p>It’s not quite that simple, unfortunately.
+Memoization works best when a function depends on the <em>full information</em> contained in its inputs.
+In practice, this is often not the case though.
+A good example of this is Typst’s layout implementation which operates on a tree of nodes encoding different kinds of layouts.
+Apart from the node, a few more things need to be supplied to the layouter:
+Most importantly, fonts for text layout.
+But, since Typst is programmable, layout can also trigger user code execution.
+This can in turn lead to file accesses, module imports and more.
+Typst supplies all this through the <code>World</code> trait (of which there are multiple implementations for the local command line compiler and the WASM-based web app).
+Slightly simplified, the setup looks as follows:</p>
+<pre><code class="language-rust"><span class="hljs-keyword">fn</span> <span class="hljs-title function_">layout</span>(node: &amp;Node, world: &amp;<span class="hljs-keyword">dyn</span> World) <span class="hljs-punctuation">-&gt;</span> Frame {
+    ...
+}
+
+<span class="hljs-keyword">trait</span> <span class="hljs-title class_">World</span> {
+    <span class="hljs-keyword">fn</span> <span class="hljs-title function_">book</span>(&amp;<span class="hljs-keyword">self</span>) <span class="hljs-punctuation">-&gt;</span> &amp;FontBook;
+    <span class="hljs-keyword">fn</span> <span class="hljs-title function_">font</span>(&amp;<span class="hljs-keyword">self</span>, id: <span class="hljs-type">usize</span>) <span class="hljs-punctuation">-&gt;</span> <span class="hljs-type">Option</span>&lt;Font&gt;;
+    <span class="hljs-keyword">fn</span> <span class="hljs-title function_">file</span>(&amp;<span class="hljs-keyword">self</span>, path: &amp;Path) <span class="hljs-punctuation">-&gt;</span> FileResult&lt;Buffer&gt;;
+}
+</code></pre>
+<p>To speed up our engine, we now want to memoize the layout function.
+Now, think back to how memoization works and you might spot the problem:
+The <code>layout</code> function effectively depends on <em>everything,</em> on the whole state of the world!
+As soon as a single source file changes, all memoized results become unusable.
+That’s not good.
+Does memoization just not fit the bill?</p>
+<h2>Constrained memoization</h2>
+<p>Let’s not give up quite that quickly.
+That the <code>layout</code> function <em>can</em> access the whole world, doesn’t mean it will!
+And if some totally unrelated file changes, we should still be able to reuse our layout results.
+To do that, we just need to know which parts of the world a <code>layout</code> call depends on and check that those stayed the same.
+This is exactly what <a href="https://github.com/typst/comemo"><code>comemo</code></a>, a new library we developed for Typst, is about.
+To use it, we just have to add two attributes to the code from before and wrap the <code>world</code> in comemo’s <code>Tracked</code> container:</p>
+<pre><code class="language-rust"><span class="hljs-keyword">use</span> comemo::{memoize, track, Tracked};
+
+<span class="hljs-meta">#[memoize]</span>
+<span class="hljs-keyword">fn</span> <span class="hljs-title function_">layout</span>(node: &amp;Node, world: Tracked&lt;<span class="hljs-keyword">dyn</span> World&gt;) <span class="hljs-punctuation">-&gt;</span> Frame {
+    ...
+}
+
+<span class="hljs-meta">#[track]</span>
+<span class="hljs-keyword">trait</span> <span class="hljs-title class_">World</span> {
+    <span class="hljs-keyword">fn</span> <span class="hljs-title function_">book</span>(&amp;<span class="hljs-keyword">self</span>) <span class="hljs-punctuation">-&gt;</span> &amp;FontBook;
+    <span class="hljs-keyword">fn</span> <span class="hljs-title function_">font</span>(&amp;<span class="hljs-keyword">self</span>, id: <span class="hljs-type">usize</span>) <span class="hljs-punctuation">-&gt;</span> <span class="hljs-type">Option</span>&lt;Font&gt;;
+    <span class="hljs-keyword">fn</span> <span class="hljs-title function_">file</span>(&amp;<span class="hljs-keyword">self</span>, path: &amp;Path) <span class="hljs-punctuation">-&gt;</span> FileResult&lt;Buffer&gt;;
+}
+</code></pre>
+<p>The <code>memoize</code> attribute simply instructs comemo that this function should be memoized.
+The <code>track</code> attribute is more interesting.
+It implements the <code>Track</code> trait for <code>dyn World</code>, allowing us to construct a <code>Tracked&lt;dyn World&gt;</code>.
+A tracked argument needn’t be exactly the same as in a previous call for that call’s result to be reusable.
+It just needs to be used equivalently.</p>
+<p>The <code>Tracked&lt;T&gt;</code> container wraps <code>T</code> and only exposes the methods from the trait (or impl block) annotated with <code>#[track]</code>.<sup class="footnote-ref"><a href="#fn1" id="fnref1">[1]</a></sup>
+When one of the tracked methods is called, it generates <em>constraints</em> that shrink down the set of equivalent <code>T</code> instances.
+The constraints for <code>T</code> consist of a struct containing one map for each tracked method.
+Each map records the input-to-output mapping of that method.
+These recordings encode all relevant information about an instance <code>x</code> of <code>T</code>.
+When another instance <code>y</code> fulfills the constraints generated for <code>x</code> during a memoized call, it will trigger all the same code paths as <code>x</code> did.<sup class="footnote-ref"><a href="#fn2" id="fnref2">[2]</a></sup>
+This means that memoized results for <code>x</code> can also be used for <code>y</code>.</p>
+<p>Let’s have a bit closer look at these input-to-output recordings.
+The maps are structured as follows:</p>
+<ul>
+<li>
+<p><strong>Key:</strong>
+The key type of each map is a tuple of the function’s arguments (excluding <code>self</code>).
+When an argument is borrowed (like the <code>&amp;Path</code> argument to <code>file</code>), comemo determines its owned variant with <code>std::borrow::ToOwned</code> (therefore, <code>PathBuf</code> in the figure below).
+When the function has no arguments except <code>self</code>, the key type is the empty tuple.
+The map can thus only have two states: Empty and containing the empty tuple. Then, we can store the whole map as an <code>Option</code> instead.</p>
+</li>
+<li>
+<p><strong>Value:</strong>
+The value type captures the output of the method.
+To save memory, comemo merely stores 128-bit SipHashes instead of the full return values.
+Although SipHash is not a cryptographic hash function, it provides high enough resistance against unlucky collisions.
+(It’s the same hash function that is used in rustc’s incremental system and in std’s hash maps.)</p>
+</li>
+</ul>
+<p>To determine whether an instance of <code>T</code> fulfills certain constraints, we can replay the recordings and check for each method whether its return values match the saved hashes.</p>
+<p>The figure below visualizes the memory layout of a <code>Tracked&lt;dyn World&gt;</code> and the constraint setup for a <code>dyn World</code>:</p>
+<p><img
+  src="/assets/tracked.svg"
+  alt="Memory layout of the type `Tracked<dyn World>` pointing to a `dyn World` and a `WorldConstraint`. The constraint has fields for the book, font, and file methods."
+  width="400"
+  height="220"
+/></p>
+<p>Now, to perform memoization, we just need a cache that stores the results of each memoized function plus constraints on its inputs.
+When a memoized function is called, this cache is checked for entries with compatible constraints.
+If there’s a hit, we can directly return the result.
+Otherwise, we generate empty constraints for the inputs, hook them up into the tracked arguments, execute the function, and store the output alongside its generated constraints in the cache.</p>
+<p>Well, that was a lot.
+Luckily, you don’t have to worry about this when using comemo.
+It all happens automagically behind the scenes.</p>
+<h2>Comparison</h2>
+<p>You might be wondering how all of this compares to Rust’s incremental compilation setup.
+<code>rustc</code>’s incrementality is based on the <a href="https://rustc-dev-guide.rust-lang.org/query.html"><em>query system.</em></a>
+This system is built around a database of queries like “type check this module” and “give me the type of this expression.”
+The database caches query results and reuses them if possible.
+This query system has since been lifted into an external library called <a href="https://github.com/salsa-rs/salsa">salsa</a>, which is also used by rust-analyzer.</p>
+<p>Conceptually, comemo and salsa are somewhat similar.
+Both allow you to reuse partial results even in face of changed inputs.
+But on the developer-facing side they are quite different.
+In salsa, you have to structure your whole program around the database.
+In comparison, comemo is far simpler to integrate into existing programs.
+You can just start annotating pure functions with <code>#[memoize]</code> and add tracked arguments where applicable later.
+There’s also currently a redesign of salsa <a href="https://smallcultfollowing.com/babysteps/blog/2022/08/18/come-contribute-to-salsa-2022/">in progress</a> (salsa 2022).
+This redesign and comemo are more similar, but the salsa version is still a bit harder to integrate into an existing program.
+From what I could gather, salsa 2022 also doesn’t have a great mechanism for lazily loaded inputs (e.g. fonts that Typst pulls from a web server).
+There’s also <a href="https://github.com/Adapton/adapton.rust/">adapton</a>, another incrementality framework, but it’s really complex and honestly I didn’t really understand it.</p>
+<h2>Beyond comemo</h2>
+<p>In Typst, incremental compilation started out with hand-written layout constraints.
+Unfortunately, these were very hard to write and pretty bug-prone.
+From this arose the idea to autogenerate constraints and ultimately comemo.
+But there are more interesting problems we tackled to realize instant preview.
+For example, we implemented an incremental parser that powers both the compiler and our web app’s syntax highlighting.</p>
+<p>Another big problem we faced was error reporting and jump-to-source functionality.
+To realize them, late stages of the compiler need to refer back to segments of the source code.
+The standard choice for this are simple byte ranges (“spans”), but these of course change a lot when editing the start of a file, invalidating lots of memoized results in the process.
+To fix this, we implemented a special syntax node numbering scheme that integrates with our incremental parser.
+It gives a stable identity to syntax nodes even when their byte offsets in the
+file change.</p>
+<p>To summarize: We’re really passionate about realizing true instant preview for a fully-fledged typesetting language.
+So, if any of this was interesting for you, please also feel free to <a href="https://typst.app">check out Typst</a>.
+We are not yet in beta, but our wait list is open and we plan to invite a first batch of alpha testers within the year!</p>
+<hr class="footnotes-sep">
+<section class="footnotes">
+<ol class="footnotes-list">
+<li id="fn1" class="footnote-item"><p>The type <code>Tracked&lt;T&gt;</code> is a wrapper around <code>T</code> that derefs to a newtype
+generated by the <code>#[track]</code> macro.
+This newtype has an inherent impl with the tracked variants of the methods in the trait or impl block annotated with <code>#[track]</code>. <a href="#fnref1" class="footnote-backref">↩︎</a></p>
+</li>
+<li id="fn2" class="footnote-item"><p>As long as the function is pure.
+But that is a prerequisite for memoization, anyway. <a href="#fnref2" class="footnote-backref">↩︎</a></p>
+</li>
+</ol>
+</section>
+]]></content>
+        <author>
+            <name>Laurenz Mädje</name>
+            <email>laurmaedje@gmail.com</email>
+            <uri>https://laurmaedje.github.io</uri>
+        </author>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[Types and Context]]></title>
+        <id>/posts/types-and-context</id>
+        <link href="/posts/types-and-context"/>
+        <updated>2023-09-04T00:00:00.000Z</updated>
+        <summary type="html"><![CDATA[Some ideas on advancing Typst.]]></summary>
+        <content type="html"><![CDATA[<p>This blog post discusses some ideas about how we could make Typst simpler and
+more expressive. In particular, it talks about custom elements, types,
+introspection, and “get rules”.</p>
+<h2>Elements</h2>
+<p>Typst has the concept of <em>elements</em> that encode semantical entities in a
+document: Things like a figure, an image, but also just text are elements. The
+structure of a document is defined by a tree of elements and different concrete
+presentations can be derived from this tree through show rules. Morover, Typst
+has the concept of an <em>element function,</em> which is basically a constructor for
+an element. (This concept is not really explained in the documentation and
+sometimes a source of confusion.)</p>
+<p>Why do we need elements and show rules though? Can’t we just have functions that
+directly produce visual output? The answer is decoupling: By separately defining
+the semantic model of an entity (as an element) and its visual presentation
+(through a show rule), we can display the same semantic element in different
+ways, through different show rules, and thereby separate <em>content</em> from
+<em>presentation.</em>  We also have different options on how we want to achieve this:
+(1) We can write separate sets of show rules for different targets. This is
+similar to having different CSS files for the same document. (2) We can write a
+single unified set of show rules that internally uses if conditionals to check
+which output format we are targeting. This a more akin to media queries.</p>
+<p>Apart from separation of concerns, elements give us interoperability: A heading
+created by package A can be styled through a show rule defined by package B.
+This directly motivates custom elements: Why should the set of semantical
+entites be restricted to built-in elements? A library-defined entity benefits
+just as much from separation of concerns and interoperability as a built-in one.</p>
+<p>However, there are no custom elements in Typst at the moment. Instead, packages
+use functions for things that conceptually should be elements. Unfortunately,
+this severely hinders styling and customization of package “elements”: Most
+packages either use <code>.with(..)</code> overrides or expose some <code>state()</code>-based
+solution for global configuration. Both of these solutions have problems:</p>
+<ul>
+<li>
+<p><code>.with(..)</code> only affects the current variable scope, it does not affect
+“elements” produced by some unrelated code. This reduces composability:
+Imagine that headings created by some package you use wouldn’t be affected by
+your heading show rules.</p>
+</li>
+<li>
+<p><code>state()</code>-based solutions are typically global: Styling things locally thus
+becomes more complex or impossible.</p>
+</li>
+</ul>
+<p>Both of these problems would be solved by set rules on custom elements. The most
+direct way to integrate custom elements into Typst (as it is today), would be
+custom element functions, with a syntax like <code>let element mything(..) = ..</code>.
+However, upon closer inspection, functions aren’t really the right concept to
+model elements: Elements are <em>data</em> and not <em>computations.</em> What we would write
+on the right-hand side of an element function’s definition is really the
+<strong>default show rule</strong> of the element. So, what is the right tool to model
+<em>data</em>? The answer to this is simple: Types.</p>
+<p>By modelling elements as types instead of functions, I believe we can also clear
+up a common confusion in Typst: Why can you <code>set</code> arguments on certain
+functions, but not on others? The answer lies again in composability. Consider
+the following snippet of markup:</p>
+<pre><code><span class="typ-key">#</span><span class="typ-key">let</span> it <span class="typ-op">=</span> <span class="typ-func">heading</span><span class="typ-punct">[</span>Hello<span class="typ-punct">]</span>
+<span class="typ-key">#</span><span class="typ-key">set</span> <span class="typ-func">heading</span><span class="typ-punct">(</span>numbering<span class="typ-punct">:</span> <span class="typ-str">&quot;1.&quot;</span><span class="typ-punct">)</span>
+<span class="typ-pol">#</span><span class="typ-pol">it</span>
+</code></pre>
+<p>The heading stored in <code>it</code> is affected by the numbering set rule even though the
+<code>heading</code> function was called before the set rule was in effect. This way, we
+get our desired composability: A heading created by some package is affected by
+our set and show rules even though it is independent of our local variable
+scope.</p>
+<p>Set rules do <strong>not</strong> simply pre-set an argument for the remainder of the scope.
+Instead, they apply configuration to the subtree of content generated by the
+scope they are in. They manipulate a <em>tree of data,</em> not the
+<em>flow of computation.</em> Because they manipulate elements, they only work for
+arguments of element functions, not arguments of normal computational functions.</p>
+<p>In a world where we model elements as types instead of functions, set rules thus
+only work on types and not on functions. This is a much clearer distinction than
+that of normal vs element functions. It’s still not super trivial to understand
+when a settable property can be observed on an value, but knowledge of this is
+also typically only required for more advanced use cases.</p>
+<h2>Types</h2>
+<p>As we discussed, elements are data, so it makes sense to model them as types
+rather than functions. This design has the added benefit that custom types can
+be generally useful for advanced scripting. Modelling an element as a type could
+look like this:</p>
+<pre><code><span class="typ-key">#</span><span class="typ-key">type</span> heading <span class="typ-punct">{</span>
+  <span class="typ-key">field</span> level <span class="typ-op">=</span> <span class="typ-num">1</span>
+  <span class="typ-key">field</span> numbering <span class="typ-op">=</span> <span class="typ-key">none</span>
+  <span class="typ-key">field</span> supplement <span class="typ-op">=</span> <span class="typ-key">auto</span>
+  <span class="typ-key">field</span> outlined <span class="typ-op">=</span> <span class="typ-key">true</span>
+  <span class="typ-key">field</span> bookmarked <span class="typ-op">=</span> <span class="typ-key">auto</span>
+  <span class="typ-key">field</span> body
+
+  <span class="typ-comment">// This is the default show rule for headings.</span>
+  <span class="typ-comment">// It can be overridden by `show heading: ..`.</span>
+  <span class="typ-key">show</span><span class="typ-punct">:</span> it <span class="typ-op">=&gt;</span> <span class="typ-func">block</span><span class="typ-punct">(</span><span class="typ-punct">{</span>
+    <span class="typ-key">if</span> it<span class="typ-punct">.</span>numbering <span class="typ-op">!=</span> <span class="typ-key">none</span> <span class="typ-punct">{</span>
+      <span class="typ-func">counter</span><span class="typ-punct">(</span>heading<span class="typ-punct">)</span>
+      <span class="typ-func">h</span><span class="typ-punct">(</span><span class="typ-num">0.3em</span><span class="typ-punct">,</span> weak<span class="typ-punct">:</span> <span class="typ-key">true</span><span class="typ-punct">)</span>
+    <span class="typ-punct">}</span>
+    it<span class="typ-punct">.</span>body
+  <span class="typ-punct">}</span><span class="typ-punct">)</span>
+<span class="typ-punct">}</span>
+</code></pre>
+<p>Within a type definition, there would be fields, scoped bindings, and optionally
+a default show rule.</p>
+<ol>
+<li>
+<p>Fields associate data with an instance of the type. They can have default
+values, which makes them optional to specify in the type’s (automatically
+generated) constructor. Moreover, optional fields could be used with set
+rules of that type. Fields without default value would be required in the
+constructor and couldn’t be used with set rules (it wouldn’t make sense
+because they are always already inherently defined for each instance of the
+type).</p>
+</li>
+<li>
+<p>Scoped bindings would become available in the type’s scope. For example,
+<code>let zero = ..</code> would allow us to write <code>point.zero</code>. Similarly,
+<code>let add(..) = ..</code> would let us write <code>point.add(..)</code>. Moreover, functions in
+a type’s scope could be called as <em>methods</em> on instances of that type. We
+could write <code>a.add(b)</code> because <code>add</code> would be defined in the scope of
+<code>type(a)</code>. Here, <code>add</code> is a normal function. Methods wouldn’t be a separate
+concept from functions, they would just be an alternative way to call a
+function in a type’s scope. The argument names in <code>add</code> are also arbitrary,
+we could have also used <code>self</code> instead of <code>a</code> should we prefer that.</p>
+</li>
+<li>
+<p>The type can have a default show rule that defines its visual presentation.
+If we omit that default show rule for the type, it becomes just its <code>repr</code>
+(i.e. its name and its fields).</p>
+</li>
+</ol>
+<p>Note that this design <em>can</em> accomodate type hints down the road, but it doesn’t
+require them right away. A more classical type could look like this:</p>
+<pre><code><span class="typ-key">#</span><span class="typ-key">type</span> point <span class="typ-punct">{</span>
+  <span class="typ-key">field</span> x
+  <span class="typ-key">field</span> y
+
+  <span class="typ-key">let</span> zero <span class="typ-op">=</span> <span class="typ-func">point</span><span class="typ-punct">(</span><span class="typ-num">0</span><span class="typ-punct">,</span> <span class="typ-num">0</span><span class="typ-punct">)</span>
+  <span class="typ-key">let</span> <span class="typ-func">add</span><span class="typ-punct">(</span>a<span class="typ-punct">,</span> b<span class="typ-punct">)</span> <span class="typ-op">=</span> <span class="typ-func">point</span><span class="typ-punct">(</span>a<span class="typ-punct">.</span>x <span class="typ-op">+</span> b<span class="typ-punct">.</span>x<span class="typ-punct">,</span> a<span class="typ-punct">.</span>y <span class="typ-op">+</span> b<span class="typ-punct">.</span>y<span class="typ-punct">)</span>
+<span class="typ-punct">}</span>
+
+<span class="typ-key">#</span><span class="typ-key">let</span> z <span class="typ-op">=</span> point<span class="typ-punct">.</span>zero
+<span class="typ-key">#</span><span class="typ-key">let</span> a <span class="typ-op">=</span> <span class="typ-func">point</span><span class="typ-punct">(</span><span class="typ-num">2</span><span class="typ-punct">,</span> <span class="typ-num">3</span><span class="typ-punct">)</span>
+<span class="typ-key">#</span><span class="typ-key">let</span> b <span class="typ-op">=</span> <span class="typ-func">point</span><span class="typ-punct">(</span><span class="typ-num">1</span><span class="typ-punct">,</span> <span class="typ-num">4</span><span class="typ-punct">)</span>
+<span class="typ-key">#</span><span class="typ-key">let</span> r <span class="typ-op">=</span> <span class="typ-func">point</span><span class="typ-punct">(</span><span class="typ-num">3</span><span class="typ-punct">,</span> <span class="typ-num">7</span><span class="typ-punct">)</span>
+
+<span class="typ-pol">#</span><span class="typ-pol">assert</span><span class="typ-punct">.</span><span class="typ-func">eq</span><span class="typ-punct">(</span>a<span class="typ-punct">.</span><span class="typ-func">add</span><span class="typ-punct">(</span>b<span class="typ-punct">)</span><span class="typ-punct">,</span> r<span class="typ-punct">)</span>
+<span class="typ-pol">#</span><span class="typ-pol">assert</span><span class="typ-punct">.</span><span class="typ-func">eq</span><span class="typ-punct">(</span>point<span class="typ-punct">.</span><span class="typ-func">add</span><span class="typ-punct">(</span>a<span class="typ-punct">,</span> b<span class="typ-punct">)</span><span class="typ-punct">,</span> r<span class="typ-punct">)</span>
+</code></pre>
+<p>If we model elements as normal types, certain things that were specific to
+content now affect all values.</p>
+<p>First, it would mean that any type can have set &amp; show rules, not just special
+elements. This makes possible some things that just don’t work right now (which
+is confusing to people): Right now, an integer or a float is eagerly converted
+to text when it is interpolated into content. As a result, this conversion
+cannot be affected by set rules (as discussed above, they can only affect the
+transformation of the tree of elements, not immediate computation). This means
+that things like setting the decimal separator with a set rule is not possible.
+If the integer was retained as a value, however, and only converted to text
+through its show rule, this problem would go away.</p>
+<p>Second up is the question what happens to functions that currently take
+<code>content</code>. Since anything can be displayed, these <em>could</em> be changed to take
+<code>any</code>. However, this means that functions that accept content <em>or</em> some value
+(like <code>auto</code> or <code>none</code>) would have somewhat nonsensical signatures like
+<code>auto | any</code>. I’m not sure whether I consider this a big problem, but it’s still
+somewhat of an open question how we deal with that. We could also continue to
+have a notion of <code>content</code> and restrict which types “implement that interface”.</p>
+<p>Third, are <code>location</code>s and <code>label</code>s. Supporting them on arbitrary values does
+complicate things somewhat. Even an integer could have a label, which is
+slightly crazy. But I think, overall it is not that problematic as long as we
+implement it efficiently (i.e. keep the overhead minimal for values that <em>don’t</em>
+have a label.) It’s also kinda nice if we can query for anything we label and
+put into the document, even an integer. Locations fit in with some other
+thoughts I had, so I will postpone talking about them for a bit.</p>
+<h2>Context</h2>
+<p>As it stands, <code>locate</code>, <code>style</code>, and <code>layout</code> are three separate instances of
+the same pattern: A function that takes a closure and returns content, which
+evaluates the closure lazily and possibly multiple times. Precisely this is the
+important aspect of them: While a normal block of code runs exactly once, code
+wrapped in such a function can run never, just once, or more than one time.
+Moreover, the arguments these functions provide (a <code>location</code>, a <code>styles</code>
+object, and a <code>size</code> dictionary, respectively) may be different during each
+invocation as they are <em>context-dependant.</em></p>
+<p>The current setup is quite confusing for a number of reasons:</p>
+<ul>
+<li>
+<p>Lack of conceptual generality: An experienced Typst user might see the
+conceptual parallelity of <code>locate</code>, <code>style</code>, and <code>layout</code>. A beginner,
+however, will not know about this. Because the callback architecture is
+currently a pattern rather than an actual language concept, there is no good
+place to document it and no good way to teach it.</p>
+</li>
+<li>
+<p>Bad diagnostics: People frequently try to write things like <code>let final = locate(loc =&gt; counter.final(loc)); #(final + 1)</code>. The compiler will then
+unhelpfully say that it could not add content and an integer.</p>
+</li>
+<li>
+<p>Confusing API: Some functions like <code>query</code> and <code>counter.final</code> take in a
+<code>location</code> parameter and then <em>they just discard it.</em> This parameter has the
+sole purpose of ensuring that the function is called within a <code>locate</code>
+context. Note that this restriction is <strong>not</strong> strictly necessary from a
+language-design perspective. It is motivated by implementation reasons: By
+encapsulating all queries in <code>locate</code> contexts, we can reduce the scope of
+incremental recomputations from a whole module to a small block of code. If we
+would allow top-level queries, things like module exports could depend on
+queries, meaning a module wouldn’t be a well-defined self-contained entity
+without an introspection context.</p>
+</li>
+</ul>
+<p>I believe that the fundamental problem is not how these things
+<em>work internally,</em> but how we <em>expose</em> them. My proposal is the following:</p>
+<ul>
+<li>
+<p>We introduce the explicit notion of <em>contextual functions.</em> Such functions
+depend on some piece of information that differs across the document and as
+such they cannot run without an established context. The documentation clearly
+marks them as contextual and states what piece of context they depend on.</p>
+</li>
+<li>
+<p>We introduce a <code>context</code> expression. This expression wraps another expression
+and provides context to it <em>implicitly.</em> When you call a contextual function
+outside of an established context, the compiler produces a helpful error
+message with the hint to use a context expression. A context expression’s
+return value is an opaque contextual value that can be placed into the
+document, yielding different output depending on the context. If you try to
+use a contextual value for normal computation, the compiler produces a helpful
+error message and links to an explanation.</p>
+</li>
+</ul>
+<p>Consider this piece of code:</p>
+<pre><code><span class="typ-func">#</span><span class="typ-func">locate</span><span class="typ-punct">(</span>loc <span class="typ-op">=&gt;</span> <span class="typ-punct">{</span>
+  <span class="typ-func">style</span><span class="typ-punct">(</span>styles <span class="typ-op">=&gt;</span> <span class="typ-punct">{</span>
+    <span class="typ-key">let</span> last <span class="typ-op">=</span> <span class="typ-func">query</span><span class="typ-punct">(</span>heading<span class="typ-punct">,</span> loc<span class="typ-punct">)</span><span class="typ-punct">.</span><span class="typ-func">last</span><span class="typ-punct">(</span><span class="typ-punct">)</span>
+    <span class="typ-key">let</span> size <span class="typ-op">=</span> <span class="typ-func">measure</span><span class="typ-punct">(</span>last<span class="typ-punct">.</span>body<span class="typ-punct">,</span> styles<span class="typ-punct">)</span>
+    <span class="typ-punct">[</span>Width is <span class="typ-pol">#</span><span class="typ-pol">size</span><span class="typ-punct">.</span><span class="typ-pol">width</span><span class="typ-punct">]</span>
+  <span class="typ-punct">}</span><span class="typ-punct">)</span>
+<span class="typ-punct">}</span><span class="typ-punct">)</span>
+</code></pre>
+<p>Using a context expression, this would look like this:</p>
+<pre><code><span class="typ-key">#</span><span class="typ-key">context</span> <span class="typ-punct">{</span>
+  <span class="typ-key">let</span> last <span class="typ-op">=</span> <span class="typ-func">query</span><span class="typ-punct">(</span>heading<span class="typ-punct">)</span><span class="typ-punct">.</span><span class="typ-func">last</span><span class="typ-punct">(</span><span class="typ-punct">)</span>
+  <span class="typ-key">let</span> size <span class="typ-op">=</span> <span class="typ-func">measure</span><span class="typ-punct">(</span>last<span class="typ-punct">.</span>body<span class="typ-punct">)</span>
+  <span class="typ-punct">[</span>Width is <span class="typ-pol">#</span><span class="typ-pol">size</span><span class="typ-punct">.</span><span class="typ-pol">width</span><span class="typ-punct">]</span>
+<span class="typ-punct">}</span>
+</code></pre>
+<p>Implementation-wise not that much has changed. User-facing, it is quite
+different though:</p>
+<ul>
+<li>We can omit the <code>loc</code> argument <code>query</code></li>
+<li>We can omit the <code>styles</code> argument to <code>measure</code></li>
+<li>We have only a single nesting level instead of two</li>
+<li>The expression is syntactically less noisy than one or even two nested
+closures.</li>
+</ul>
+<p>The motivation for <code>context</code> expressions this doesn’t quite end here though. As
+we discussed before, settable properties affect an element where it is <em>used,</em>
+not were it is created. This means the value of a settable property is
+contextual. A “get rule” can thus only work within an established context.
+Currently, it could be implemented roughly like this:</p>
+<pre><code><span class="typ-func">#</span><span class="typ-func">style</span><span class="typ-punct">(</span>styles <span class="typ-op">=&gt;</span> styles<span class="typ-punct">.</span><span class="typ-func">get</span><span class="typ-punct">(</span>text<span class="typ-punct">)</span><span class="typ-punct">.</span>fill<span class="typ-punct">)</span>
+</code></pre>
+<p>Compare this with a <code>context</code> expression:</p>
+<pre><code><span class="typ-key">#</span><span class="typ-key">context</span> text<span class="typ-punct">.</span>fill
+</code></pre>
+<p>Particularly for this case, it is very useful to have the context implicit
+instead of explicit because it greatly reduces the syntactical overhead. And
+there is one more nice trick: Because contextual values would be a first-class
+language concept, we could potentially also allow contextual values in other
+places that can deal with them:</p>
+<pre><code><span class="typ-comment">// make text darker</span>
+<span class="typ-key">#</span><span class="typ-key">set</span> <span class="typ-func">text</span><span class="typ-punct">(</span>fill<span class="typ-punct">:</span> <span class="typ-key">context</span> text<span class="typ-punct">.</span>fill<span class="typ-punct">.</span><span class="typ-func">darken</span><span class="typ-punct">(</span><span class="typ-num">20%</span><span class="typ-punct">)</span><span class="typ-punct">)</span>
+</code></pre>
+<p>Just like <code>context</code> could be <em>used</em> in a few more places like that, context
+could also be <em>provided</em> by other places: Show rules, for instance, run once per
+occurance of a value in the document. Thus, they could just as well provide
+context, saving us an extra context expression.</p>
+<p>Similarly, numberings could be smartly resolved with the correct context. Right
+now, there is the following <a href="https://github.com/typst/typst/issues/1057">tricky bug</a>:
+If you define a numbering that internally displays another counter, that counter
+will show different values depending on where the numbering is applied: In the
+table of contents, in a reference, etc. We could fix this problem by letting
+these places provide the correct context.</p>
+<h3>Locations</h3>
+<p>Let me come back to locations now. These are somewhat “magic” as an opaque type
+that gives access to page, x, and y. Perhaps they feel magic because of their
+naming. They are named after how they are used, not what they really are. If you
+dig down into the inner workings, a location is really just a <strong>unique ID</strong> for
+an element. If you write <code>locate(loc =&gt; ..)</code>, then you get back a <code>LocateElem</code>
+which holds a unique ID. If you query semantic elements like headings, you get
+access to their unique IDs.</p>
+<p>Now note that labels are also sort of IDs, just not necessarily unique. I think
+there is some potential for unification here. We could merge labels and unique
+IDs: Let Typst generate a unique label and then combine it with a normal named
+label. Such merged labels would be useful in abstractions that consist of fixed
+elements that need labels for some automation, but the whole thing might appear
+multiple times in a document. If we just use normal labels, there is a collision
+between these instances that we need to handle, and it also might collide with
+user-defined labels.</p>
+<p>Interestingly enough, this concept <em>is</em> already used internally in the compiler.
+The <code>Location</code> type has a <code>.variant(index: usize)</code> method for attaching a
+well-known location to a generated element. This is used for two-way-linking
+between citations and bibliography references without tons of back-and-forth
+introspection.</p>
+<p>Getting back to context expressions: A function that generates a unique label
+for us could be just yet another contextual function. The <code>location</code> method on
+content would be superseded by a function that takes a value and returns its
+unique ID (if present) as a label. And to get access to <code>page</code>, <code>x</code>, <code>y</code> we
+would have yet another contextual function that takes a label (or a value with a
+unique label) and gives its position. And the perfect name for that function is
+<code>locate</code>. :)</p>
+<pre><code><span class="typ-key">#</span><span class="typ-key">context</span> <span class="typ-punct">{</span>
+  <span class="typ-key">let</span> elem <span class="typ-op">=</span> <span class="typ-func">query</span><span class="typ-punct">(</span>heading<span class="typ-punct">)</span><span class="typ-punct">.</span><span class="typ-func">first</span><span class="typ-punct">(</span><span class="typ-punct">)</span>
+  <span class="typ-key">let</span> <span class="typ-punct">(</span>x<span class="typ-punct">,</span> y<span class="typ-punct">)</span> <span class="typ-op">=</span> <span class="typ-func">locate</span><span class="typ-punct">(</span>elem<span class="typ-punct">)</span>
+  <span class="typ-punct">[</span>Heading is at (<span class="typ-pol">#</span><span class="typ-pol">x</span>, <span class="typ-pol">#</span><span class="typ-pol">y</span>)!<span class="typ-punct">]</span>
+<span class="typ-punct">}</span>
+</code></pre>
+<h3>Async/await?</h3>
+<p>I would like to emphasize once more the central observation: Context values are
+<strong>not</strong> special because they depend on context that is not available when normal
+code runs. Rather, they are special because <strong>the code defining the contextual
+value may need to run multiple times for different contexts.</strong> This makes it
+distinctly different from something like async/await, where computation is
+delayed, but still happens just once. While the return value of a <code>context</code>
+expression is <em>sort of</em> like a <code>Promise</code> or <code>Future</code>, it is different because it
+may run multiple times. (I’m not sure how this relates to algebraic effects.
+From my limited understanding, they do allow for multiple resumptions. I am not
+sure how they fit into this, perhaps this is sort of an algebraic effect.)</p>
+<p>While we’re at async/await: In theory, we could have syntactic sugar to unnest
+context and basically pull the remaining scope into a <code>context</code> block. This
+would be akin to implicit awaiting. However, I do not think this is a good idea
+for three reasons:</p>
+<ol>
+<li>
+<p>It would mean that any function dealing with contextual things internally
+would also return a contextual value. It would not be possible to have e.g. a
+function that returns an array of contextual values.</p>
+</li>
+<li>
+<p>By trying to hide what code may run multiple times, it makes it harder to
+reason about the interaction of different pieces of code. When a computation
+diverges into a code segment that may run multiple times, can it ever converge
+again? Even if algebraic effects are some kind of silver bullet, I don’t see how
+they could fix that. (I would be happy to stand corrected though!)</p>
+</li>
+<li>
+<p>It hurts efficiency and incremental compilation: Think back to why <code>query</code>
+currently takes a <code>location</code> parameter to reduce the amount of things it can
+effect. Allowing top-level desugared context runs into the same issue where a
+whole module becomes context-dependent. And even if we only allow context access
+within a function (akin to no top-level await), which would be even more
+confusing in my opinion, the scope might still be a lot larger than necessary.</p>
+</li>
+</ol>
+<h2>Recap</h2>
+<p>That’s it. Here’s what we talked about:</p>
+<ul>
+<li>What elements are and why we care</li>
+<li>How we can model elements as types</li>
+<li>How methods become associated functions</li>
+<li>The consequences of values and elements being one and the same</li>
+<li>How context expression can simplify introspection</li>
+<li>A context-based design for “get rules” with minimal syntactical overhead</li>
+<li>Why contextual code is special and different from async/await</li>
+</ul>
+]]></content>
+        <author>
+            <name>Laurenz Mädje</name>
+            <email>laurmaedje@gmail.com</email>
+            <uri>https://laurmaedje.github.io</uri>
+        </author>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[Frozen State]]></title>
+        <id>/posts/frozen-state</id>
+        <link href="/posts/frozen-state"/>
+        <updated>2024-01-15T00:00:00.000Z</updated>
+        <summary type="html"><![CDATA[Freezing state in Typst and how it could tie in with the context idea.]]></summary>
+        <content type="html"><![CDATA[<p>One thing that comes up from time to time, especially in the context of slide creation, is the idea of <em>freezing</em> state.
+Consider the following slide snippet written using the Polylux package:</p>
+<pre><code><span class="typ-key">#</span><span class="typ-key">import</span> <span class="typ-str">&quot;@preview/polylux:0.3.1&quot;</span><span class="typ-punct">:</span> <span class="typ-op">*</span>
+<span class="typ-key">#</span><span class="typ-key">set</span> math<span class="typ-punct">.</span><span class="typ-func">equation</span><span class="typ-punct">(</span>numbering<span class="typ-punct">:</span> <span class="typ-str">&quot;(1)&quot;</span><span class="typ-punct">)</span>
+
+<span class="typ-func">#</span><span class="typ-func">polylux-slide</span><span class="typ-punct">[</span>
+  First, we show: <span class="typ-pol">#</span><span class="typ-pol">pause</span>
+  <span class="typ-math-delim">$</span> x + y = z <span class="typ-math-delim">$</span>   <span class="typ-pol">#</span><span class="typ-pol">pause</span>
+  Then, we continue.
+<span class="typ-punct">]</span>
+</code></pre>
+<p>Here, we make use of the <code>pause</code> command to generate multiple pages, each of which uncovers more of the slide.
+If you compile these slides, you’ll see that the equation is numbered with (2) on page 2 and with (3) on page 3.
+This is of course not what we want.</p>
+<p>To understand why it happens, we have to understand a bit of how Polylux works internally:
+When you use the pause feature, Polylux figures out how many pages in total your slide needs.
+It then generates this number of pages and inserts the full content on each page, but with rules configured that conditionally <a href="https://typst.app/docs/reference/layout/hide/"><code>#hide</code></a> parts of the content.</p>
+<p>From Typst’s point of view, Polylux generates three separate equations and hides one of them.
+Reasonably, it thus gives each of those equations a separate number.
+Note that this is <em>generally</em> a desirable property:
+If you store content in a variable and use it multiple times, you get the same result as if you’d have written the content in each of the places (this is called <em>referential transparency</em>).
+This makes things composable and allows packages to juggle content around and style it “after the fact”.
+It’s just in some cases like this one that it’s actually semantically the same content, and we need some way to express that in Typst.</p>
+<h2>Measurement and introspection</h2>
+<p>What I’ve only realized recently, is that a very similar requirement arises when we <code>measure</code> content that performs introspection.
+Consider the following snippet:</p>
+<pre><code><span class="typ-key">#</span><span class="typ-key">let</span> c <span class="typ-op">=</span> <span class="typ-func">counter</span><span class="typ-punct">(</span><span class="typ-str">&quot;key&quot;</span><span class="typ-punct">)</span>
+<span class="typ-pol">#</span><span class="typ-pol">c</span><span class="typ-punct">.</span><span class="typ-func">update</span><span class="typ-punct">(</span><span class="typ-num">1</span><span class="typ-punct">)</span>
+<span class="typ-func">#</span><span class="typ-func">style</span><span class="typ-punct">(</span>styles <span class="typ-op">=&gt;</span> <span class="typ-punct">{</span>
+  <span class="typ-comment">// We retrieve the counter and convert it to spacing</span>
+  <span class="typ-comment">// which we then measure</span>
+  <span class="typ-key">let</span> elem <span class="typ-op">=</span> c<span class="typ-punct">.</span><span class="typ-func">display</span><span class="typ-punct">(</span>n <span class="typ-op">=&gt;</span> n <span class="typ-op">*</span> <span class="typ-func">v</span><span class="typ-punct">(</span><span class="typ-num">10pt</span><span class="typ-punct">)</span><span class="typ-punct">)</span>
+  <span class="typ-key">let</span> height <span class="typ-op">=</span> <span class="typ-func">measure</span><span class="typ-punct">(</span>elem<span class="typ-punct">,</span> styles<span class="typ-punct">)</span><span class="typ-punct">.</span>height
+  <span class="typ-punct">[</span>Height is <span class="typ-pol">#</span><span class="typ-pol">height</span><span class="typ-punct">]</span>
+  c<span class="typ-punct">.</span><span class="typ-func">step</span><span class="typ-punct">(</span><span class="typ-punct">)</span>
+  elem <span class="typ-comment">// try moving or deleting this</span>
+<span class="typ-punct">}</span><span class="typ-punct">)</span>
+<span class="typ-pol">#</span><span class="typ-pol">c</span><span class="typ-punct">.</span><span class="typ-func">step</span><span class="typ-punct">(</span><span class="typ-punct">)</span>
+</code></pre>
+<p>As-is, this outputs <code>20pt</code> which means <code>n</code> was <code>2</code>.
+If you delete the line with <code>elem</code>, it suddenly outputs <code>30pt</code>.
+What is happening here?</p>
+<p>It turns out that measuring in combination with introspection features yields some interesting results.
+To understand what is happening here, we first need to understand how counters work internally.
+Rather than being directly modified through side effects, all mutations and displays of counters and state end up as invisible content somewhere in the document and thus in the final layout.
+When resolving a <code>.display</code> call, the counter type queries (as in <a href="https://typst.app/docs/reference/introspection/query/"><code>query</code></a>) for all counter updates in the document <em>before</em> the display’s location.
+This is just like a query for all headings before a specific point as counter updates are content like headings, just invisible.</p>
+<p>Given this complete sequence of updates, we can then determine the value at the current location by applying the updates one by one.
+For example if we have a series of updates <code>.update(2)</code>, <code>update(n =&gt; 3 * n)</code>, <code>update(n =&gt; n - 3)</code>, <code>update(5)</code>, it computes the sequence <code>2, 6, 3, 5</code>.
+If the determined location of a display call is between the first two updates, it yields <code>2</code>.
+Similarly, if it is between the last two updates, it yields <code>3</code>.
+The results thus depend on how Typst determines whether an update is before or after our display when doing the query.</p>
+<p>So, how does it work? The implementation is actually relatively straight-forward:
+Typst’s introspection system holds an ordered list of all locatable elements.
+When doing a “before” query, it finds the index of the cutoff element in the list and extracts all matches up to this index.
+Crucially, asking for all matches before a non-existent element will just give us all matches.</p>
+<p>Equipped with this knowledge, let’s look at what happens above.
+Clearly, the <code>measure</code> call is affected by the position of <code>elem</code> in the real layout:</p>
+<ul>
+<li>If the <code>elem</code> is after the first <code>c.step()</code>, we get that one as part of our update list, yielding <code>20pt</code></li>
+<li>If <code>elem</code> is deleted, we don’t find it at all and get all counter updates, yielding <code>30pt</code></li>
+<li>If <code>elem</code> is moved above the first <code>c.step()</code>, we only get the initial update, yielding <code>10pt</code></li>
+</ul>
+<p>The reason the measurement is affected by the real layout is that the locations (= unique element IDs) assigned to <code>elem</code> during measurement and real layout match up.
+This is typically what you want because you’re measuring something to determine how to arrange it in a layout of your own.
+However, it can yield surprising results if you don’t end up putting the measured thing into the document.
+It is also fundamentally a best-effort approach because Typst can’t always disambiguate how multiple measured elements map to multiple real elements (if multiple ones have the same hash).
+The current way we do measurements on things with introspection is sadly a bit ill-defined.
+So far, it typically worked out because the IDs happen to mostly match up in the current implementation.</p>
+<h2>Circling back</h2>
+<p>Since the existing design results in some strange measurements results (which can fundamentally only be dealt with on a best-effort basis), maybe the problem lies with the measurement API itself.
+Perhaps redesigning this API will make our problems go away.
+What we need is a way to somehow assign a unique identity to content <em>before</em> measuring it so that the desired link between measured elements and the final layout is clear to both users / package authors and Typst.
+We basically need to tell Typst:
+“This is the same content no matter where you see it.
+If it uses counters and state internally, resolve all of them in the same way everywhere.”
+Sound familiar?</p>
+<p>This is exactly what we need for the Polylux example from above.
+Given a way to <code>freeze</code> content, we could put it into the document multiple times and have it be the same every time:</p>
+<pre><code><span class="typ-key">#</span><span class="typ-key">set</span> math<span class="typ-punct">.</span><span class="typ-func">equation</span><span class="typ-punct">(</span>numbering<span class="typ-punct">:</span> <span class="typ-str">&quot;(1)&quot;</span><span class="typ-punct">)</span>
+<span class="typ-key">#</span><span class="typ-key">context</span> <span class="typ-punct">{</span>
+  <span class="typ-key">let</span> v <span class="typ-op">=</span> <span class="typ-func">freeze</span><span class="typ-punct">(</span><span class="typ-math-delim">$</span> x + y = z <span class="typ-math-delim">$</span><span class="typ-punct">)</span>
+  v <span class="typ-comment">// this will be equation (1)</span>
+  v <span class="typ-comment">// and this, too :)</span>
+<span class="typ-punct">}</span>
+</code></pre>
+<p>In the same way, we could measure it and Typst would always understand the link between the measured and real content:</p>
+<pre><code><span class="typ-key">#</span><span class="typ-key">context</span> <span class="typ-punct">{</span>
+  <span class="typ-key">let</span> v <span class="typ-op">=</span> <span class="typ-func">freeze</span><span class="typ-punct">(</span>content<span class="typ-punct">)</span>
+  <span class="typ-comment">// No matter what happens, the</span>
+  <span class="typ-comment">// measurement will observe state</span>
+  <span class="typ-comment">// like `v` does below.</span>
+  <span class="typ-key">let</span> size <span class="typ-op">=</span> <span class="typ-func">measure</span><span class="typ-punct">(</span>v<span class="typ-punct">)</span>
+  v
+<span class="typ-punct">}</span>
+</code></pre>
+<h2>Challenges</h2>
+<p>The hard question now is: How can we implement this <code>freeze</code> function?
+We somehow need to ensure that across all usages of the frozen content, the displayed elements end up having the same locations / IDs.
+This is rather incompatible with the current way unique IDs are assigned.
+The good news is that there are independently motivated plans to change the way they are assigned.
+(The current implementation requires some mutable state in the layout engine, which prevents parallelization. If we can get rid of this state, it becomes <em>trivial</em> to parallelize the layout engine.)</p>
+<p>The new approach is basically to assign an element’s ID based on a hash of its parent’s ID + the element’s syntax span and type + local disambiguation among elements where all the previous things are the same.
+It’s a form of hierarchical hashing.
+This approach yields unique IDs that are pretty stable across multiple compilations (which is important for incremental compilation).
+Moreover, it only requires a minimal amount of local state and enables parallelization.</p>
+<p>The approach is also a lot more compatible with the desire for a <code>freeze</code> function.
+If we freeze a particular element’s ID and put it into the document twice, all its children are automatically assigned IDs that match up across the two usages. (This is the part that is not true for the current implementation, because the children would be automatically globally disambiguated.)
+However, at the same time, IDs most of the time <em>won’t</em> match up by luck anymore when doing measurement, so applied naively <code>measure</code> breaks pretty badly.
+So, essentially, the new approach and frozen state kind of depend on each other (and that realization is what triggered this post).</p>
+<p>The remaining challenge is to assign a unique ID to an element when freezing it.
+This is actually rather tricky in a language with pure functions like Typst.
+The <a href="/posts/types-and-context/">context</a> idea could help us here though.
+Since measurement needs to happen within a style callback / context anyway, we can leverage that context to get most of our desired uniqueness (a context in itself always gets a unique ID).
+We can get further uniqueness from the call-site syntax span and content hash where we assign the ID.
+There is still the possibility for a collision when dealing with hash-equal content in a loop, as shown in the example below:</p>
+<pre><code><span class="typ-key">#</span><span class="typ-key">context</span> <span class="typ-punct">{</span>
+  <span class="typ-key">let</span> a <span class="typ-op">=</span> <span class="typ-punct">[</span><span class="typ-heading">= My one heading</span><span class="typ-punct">]</span>
+  <span class="typ-key">let</span> b <span class="typ-op">=</span> <span class="typ-punct">[</span><span class="typ-heading">= My other heading</span><span class="typ-punct">]</span>
+  <span class="typ-key">let</span> vs <span class="typ-op">=</span> <span class="typ-punct">(</span>a<span class="typ-punct">,</span> a<span class="typ-punct">,</span> b<span class="typ-punct">)</span>
+  vs<span class="typ-punct">.</span><span class="typ-func">map</span><span class="typ-punct">(</span>freeze<span class="typ-punct">)</span><span class="typ-punct">.</span><span class="typ-func">join</span><span class="typ-punct">(</span><span class="typ-punct">)</span>
+<span class="typ-punct">}</span>
+</code></pre>
+<p>In this example, the context, call-site syntax span, and content hash for both <code>a</code> headings is the same, so <code>freeze</code> has no choice but to return the same content.
+As a result, the first two headings would be identified as one and the same and get the same number.
+The second, however, could be identified as different since the content is defined at a different syntax node and thus has a different span.
+In the same way, we could identify two syntactically separate freeze calls of the same content as distinct.
+We’d face a similar challenge when we would use syntax spans to provide an automatic identify to counters/states (<a href="https://github.com/typst/typst/issues/2425">see the issue on anonymous states</a>).
+For the rare case where everything matches up, manual disambiguation by the caller could be an option (i.e. passing a number or string to <code>freeze</code> which is incorporated into the ID hash).
+Still, the whole thing isn’t totally satisfactory.</p>
+<p>A second challenge for the Polylux example is the fact that <code>freeze</code> would freeze <em>everything.</em>
+Polylux also manages some internal state to figure out which slide it is currently processing.
+If everything is frozen, that state is also frozen, so two different slides showing the same frozen content couldn’t show different things.
+The <a href="https://github.com/typst/typst/issues/1841">issue on freezing state</a> proposed an <code>exclude</code> mechanism to deal with this.
+However, I have no idea how to implement that.
+An alternative solution to this problem could be get rules.
+Assuming that <code>freeze</code> would only freeze the identity used for introspection and not the active styles, custom get rules could be used to communicate arbitrary information like slide numbers down the content tree.</p>
+<p>The presented design in this post is far from final.
+The post is primarily intended as an initial exploration of potential foundations for a state freezing functionality.
+I’m thinking of the ideas as sort of Lego bricks:
+There are various considerations, trade-offs, and challenges at play, so we need to find the right way to assemble the bricks.
+But the assembly doesn’t affect just state freezing:
+There are other desirable state-related features that are also affected by the decision we make here:
+For instance, a related feature request is to be able to isolate some content from the document, so that it’s state isn’t affected by the remaining document and vice versa.
+I think that this is also something that could be fitted fairly well into the framework discussed above.</p>
+<p><a href="https://discord.com/channels/1054443721975922748/1196509531354701874">Discussion on Discord.</a></p>
+]]></content>
+        <author>
+            <name>Laurenz Mädje</name>
+            <email>laurmaedje@gmail.com</email>
+            <uri>https://laurmaedje.github.io</uri>
+        </author>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[TeX and Typst: Layout Models]]></title>
+        <id>/posts/layout-models</id>
+        <link href="/posts/layout-models"/>
+        <updated>2024-06-21T00:00:00.000Z</updated>
+        <summary type="html"><![CDATA[An exploration of the layout models of TeX and Typst.]]></summary>
+        <content type="html"><![CDATA[<p>Lately, I’ve been pondering the ways in which Typst’s layout model differs from TeX’s. While Typst adopts parts of TeX’s model, in particular the paragraph layout algorithm, there are also significant differences. Most of these are related to block-level layout — things like line placement, widow &amp; orphan prevention, tables, and floats. I want to use this post to explore these differences, to identify the benefits and limitations of both models, and to present my thinking on the future of Typst’s layout engine.</p>
+<h2>Basics</h2>
+<p>Let me first (very briefly) explain how the layout engines of TeX and Typst operate at their foundational level.</p>
+<h3>TeX</h3>
+<figure class="floating">
+  <img
+    src="/assets/letter-box.svg"
+    alt="A box for a single letter"
+    width="115"
+    height="129"
+  />
+  <figcaption>
+    Box for a single letter.
+  </figcaption>
+</figure>
+<p>The layout model of TeX is built around the concepts of <em>boxes</em> and <em>glue:</em></p>
+<ul>
+<li>
+<p>A <strong>box</strong> is a rectangular container containing elements that were already laid out. It has the three metrics “width”, “height”, and “depth.” The latter two determine the box’s extent above and below the baseline.</p>
+</li>
+<li>
+<p><strong>Glue</strong> is stretchable space between boxes. It has a natural size, but has <em>shrinkability</em> and <em>stretchability</em> which allows it to occupy less or more space depending on the needs of the layout.</p>
+</li>
+</ul>
+<p>With these two simple primitives, TeX builds everything from letters and words to lines, paragraphs, and pages. To do so, it constructs horizontal and vertical <em>lists</em> (or hlist/vlist for short). A horizontal list contains inline content and is processed by the linebreaker to produce boxes for each line. These lines go into a vertical list, which is then processed by the pagebreaker to ship out pages.</p>
+<p>Of utmost importance for TeX’s model is the <em>movability</em> of boxes. In most of the cases, when making a box, TeX doesn’t yet know where it will place it.
+This allows the linebreak and pagebreak routines to be completely separate. The only thing the linebreaker needs to be aware of is the available width. From this, it produces justified and optimized line boxes. The pagebreaker then distributes those boxes across the pages. (In practice, these two things run somewhat interleaved to save memory, but conceptually they are separate.)</p>
+<p>This gives TeX a lot of flexibility in juggling things around for a better layout. An example: It’s simple to prevent things like widows &amp; orphans while distributing the vertical boxes.</p>
+<h3>Typst</h3>
+<p>Typst adopts some of TeX’s ideas, but differs significantly in other aspects. The central concept of Typst’s layout engine is the <em>region:</em> A region describes a shape into which elements can be laid out. A layouter receives a (potentially infinite) sequence of regions into which it shall lay out its contents. The result of this is a number of <em>frames,</em> which are just like TeX’s boxes.</p>
+<p>When content is laid out, it is first <em>realized</em> into a uniform structure called a <em>flow,</em> which is a collection of block-level elements. This includes spacing, paragraphs, blocks, placed elements, and a few other, minor elements.</p>
+<p>When laying out its children, the flow keeps adjusting the regions to account for already laid out content. For instance, if we’ve already visited two paragraphs that took two thirds of the available space of the first page, a subsequent table would get a first region with the remaining third of the space followed by an infinite sequence of page-sized regions.</p>
+<p>For implementation reasons, Typst currently restricts the general region model in two ways:</p>
+<ul>
+<li>All regions in a sequence must currently have the same width.</li>
+<li>Regions can currently only be rectangular. They do not allow for “cutouts.”</li>
+</ul>
+<p>Together, these two restrictions let Typst linebreak a paragraph independently of where on the pages it ends up, just like TeX. Still, block-level elements like tables are able to react to where they are placed on the page. This leaves Typst with way less flexibility in juggling things around, but more flexibility in adjusting a layout based on its own position.</p>
+<h3>Comparing TeX and Typst</h3>
+<p>When comparing TeX and Typst, we thus observe that two different desires inform the respective designs: TeX puts <strong>movability first</strong> to be able to optimize positions and spacings. Typst puts <strong>placement first</strong> so that elements can react to their positions, allowing e.g. table cells to properly break over pages.</p>
+<p>These two things are, to an extent, fundamentally at odds: When things can move after being laid out, they cannot know their own position. When things can react to their exact position during layout, they cannot be moved afterwards.</p>
+<h2>Challenges</h2>
+<p>TeX’s layout model solves a great deal of problems, particularly regarding the optimal layout of paragraphs, and to a lesser extent also of pages. In my opinion, it is a <em>pretty good model</em> for a layout engine: It’s conceptually simple, can be implemented very efficiently, and allows for high-quality typography. If it did all the things I’d like for Typst to do, I would gladly adopt it. Unfortunately though, for all its upsides, it is also limited in a few fundamental ways. Let’s take a look at a few challenging typesetting tasks where TeX falls short.</p>
+<h3>Varying container width</h3>
+<p>To build a paragraph, TeX must know the width for the individual lines. Typically, they are all the same, but with <code>\parshape</code>, the user can also provide individual widths for each line.</p>
+<p>Because paragraphs are built before it is known on which page they end up, TeX must provide this information without knowledge of the pages. For this reason, it can fundamentally not properly support layout of a single flow of text across pages or containers of varying widths. This is something that, for example, Adobe InDesign supports.<sup class="footnote-ref"><a href="#fn1" id="fnref1">[1]</a></sup></p>
+<p>Typst also doesn’t currently support varying container widths. If the limitation of consistent widths is lifted from the region model, it can in theory accommodate for it.</p>
+<figure>
+  <img
+    src="/assets/threaded-frames.avif"
+    alt="Threaded text frames"
+    width="374"
+    height="178"
+  />
+  <figcaption>
+    Threaded text frames in Adobe InDesign.
+  </figcaption>
+</figure>
+<h3>Side-floating elements</h3>
+<p>A similar limitation also shows up with the <code>wrapfig</code> package. This package adds support for images that float to the side of the text, with the text flowing around them. In contrast to bottom or top floats, this kind of float presents a fundamental challenge to TeX’s model: When building the lines for a paragraph next to a wrap figure, TeX cannot yet know the vertical positions of the individual lines. It thus cannot (with certainty) know which lines end up next to the wrapping figure.</p>
+<p>For this reason, the package makes the reasonable assumption that the paragraph’s baselines will be equidistant. Based on this and the known height of the wrapping figure, it computes the number N of lines that will fit next to the figure. Then, while building the paragraph’s lines, it allocates the correct width for these N lines (via <code>\parshape</code>). Typically, this works fine. If, however, one of the lines ends up larger or on a different page, TeX cannot correct its mistake and there will be extra unoccupied space next to the final lines.</p>
+<p>Typst currently doesn’t natively support wrapping figures.<sup class="footnote-ref"><a href="#fn2" id="fnref2">[2]</a></sup> To accommodate for this use case, we would need to lift the restriction that regions cannot have cutouts.</p>
+<figure>
+  <img
+    src="/assets/wrapfig-pagebreak.png"
+    alt="A LaTeX wrapfig at the very end of a page"
+    width="493"
+    height="218"
+  />
+  <figcaption>
+    A LaTeX wrapping figure at the very end of the page. The effect of the figure spills over to the next page, even though the figure doesn't.
+  </figcaption>
+</figure>
+<h3>Breakable tables</h3>
+<p>Tables present a particular challenge for TeX’s model. Consider a table with a few columns and rows containing multiple paragraphs that are able to break across pages (not an uncommon setup in desktop publishing).</p>
+<p>For each cell, TeX can build a vlist (containing lines) as usual. Given the vlists for the columns, it’d now be easy to build a table if one knows the positions at which the page breaks. However, TeX does <em>not</em> know the positions of anything on the page when it needs to build it. Instead, it would need to eagerly build a vlist <em>for the table itself,</em> effectively zipping multiple vlists up into one. This isn’t really possible without knowledge of the pagebreak positions, as TeX wouldn’t know at which points to synchronize the sub-vlists.</p>
+<p>There are a few packages in LaTeX which add support for tables spread across pages (<code>supertabular</code>, <code>longtable</code>) , but there are no packages which allow <em>cells</em> to break across pages (at least to the best of my knowledge). <sup class="footnote-ref"><a href="#fn3" id="fnref3">[3]</a></sup> This is simply close to impossible to do in TeX’s fundamental model.</p>
+<p>This time, things look better for Typst. As demonstrated in the figure below, Typst is capable of breaking the cells at the page boundary. This is possible because, during its layout, the table knows exactly how much space is left on the page and can react to it.</p>
+<figure>
+  <div class="rows">
+    <img
+      class="page-frame"
+      src="/assets/table-1.svg"
+      alt="First page of a document containing a breakable table."
+      width="209.76409999999998px"
+      height="297.63824999999997px"
+    />
+    <img
+      class="page-frame"
+      src="/assets/table-2.svg"
+      alt="Second page of a document containing a breakable table."
+      width="209.76409999999998px"
+      height="297.63824999999997px"
+    />
+  </div>
+  <figcaption>
+    Table with header row and cells that break over pages (generated with Typst v0.11.1).
+  </figcaption>
+</figure>
+<h2>Where To?</h2>
+<p>As we’ve seen, TeX’s model falls short on everything that requires knowledge of exact vertical positions: Flexible page sizes, chained containers, richly colliding floats, breakable tables, grid-based typesetting, and more.</p>
+<p>Typst’s current model suffers partly from the same and partly from other problems. The concept of regions in theory allows us to solve a number of problems that TeX cannot solve — flexible page sizes, container chaining, colliding floats — but the restrictions Typst puts upon them mean they cannot yet realize their full potential. At the same time, regions introduce new problems: By passing down exact positions to sublayouters, it becomes harder to optimize the layout by moving things around. This lets Typst currently fall short on widow &amp; orphan prevention, vertical justification, and more.</p>
+<p>So, where do we go from here? Do we need to embrace the limitations of TeX or do we need to leave behind the optimizations it enables? I think <em>neither</em> — we can unify movability and placement simply by embracing that <strong>every move requires a relayout.</strong></p>
+<h3>Relayout</h3>
+<p>When the layout of content is dependent on its own position, moving some already laid out content forces us to relayout it. This is tricky because of side effects: It requires running code twice and if that code isn’t designed to run twice, things can go wrong. There have been efforts in the TeX world to do “trial typesetting” of paragraphs, but it forces the engine to take apart already typeset boxes. <sup class="footnote-ref"><a href="#fn4" id="fnref4">[4]</a></sup> This approach also only works for paragraph contents and not for things like tables.</p>
+<p>Typst is in a much better position here because the language is designed in a fully <em>pure</em> way. User-defined functions cannot have any side effects. Cross-dependencies throughout the document (like counters or citations) are resolved without any mutations, through introspection over multiple layout iterations. As a result, Typst is free to rerun some piece of user code without fear of breaking things.</p>
+<p>However, up until recently Typst still held a small piece of global mutable state during layout, which was required to make introspection work. With this state, it <em>was</em> possible to relayout, but much care was required, and it was a frequent cause of bugs. Fortunately, this engine limitation has <a href="https://github.com/typst/typst/pull/4352">finally been fixed recently,</a> making layout 100% pure and free of side effects.</p>
+<p>This opens the door to a world where things can know their position <em>and</em> move — through relayout.
+While it also introduces a new dimension of complexity and performance challenges, I think Typst is well positioned to overcome these.</p>
+<h3>Complexity</h3>
+<p>A particular difficulty with a relayout-based approach is that sizes retrieved in an initial layout only limitedly predict sizes in a subsequent layout, specifically since the layout is positionally aware. We might move a block based on its initially observed size, relayout in the hope that it retains its size, and then notice that the relayouted size does not match. In such cases, we might need to relayout <em>again and again,</em> effectively performing a search for the correct position.</p>
+<figure class="floating">
+  <img
+    src="/assets/vertical-centering.svg"
+    alt="Illustration that demonstrates the difficulty of vertical centering with collision"
+    width="156"
+    height="185"
+  />
+  <figcaption>
+    Vertically centering a paragraph that collides with a placed element is hard.
+  </figcaption>
+</figure>
+<p>A practical example is vertically centering a paragraph that flows around an absolutely positioned shape. We cannot mathematically solve for the vertical starting position — we just have to try and see, essentially performing a binary search over the Y axis.</p>
+<p>Unfortunately, we have no guarantee that our result converges to a fixed position. We can, for instance, easily get into the situation where the result oscillates between two positions. I am not yet sure how big of a problem this will be in practice. My gut feeling is to just stop iterating (a) when we stop improving or (b) when we reach a fixed limit, and that this will be sufficient for practical purposes. But we’ll have to see.</p>
+<h3>Performance</h3>
+<p>Trial typesetting can be costly: Whenever we move a paragraph or block-level element on the page, we have to assume that it might change. Here, Typst’s existing mechanisms for incremental compilation can help us out. By <a href="/posts/comemo/"><em>tracking</em></a> regions, we can reuse our layout result as long as the <em>observed</em> pieces of the regions are equivalent. Essentially, instead of looking at the whole regions immediately, we only ask for the currently relevant information on-demand. For instance, instead of checking “how much space is left on this page”, we might ask “are there at least 4cm left on this page?” For the first question, a 10cm page and a 15cm page would yield different answers, but for the second one both yield the same answer.</p>
+<h2>Conclusion</h2>
+<p>I am quite optimistic about these results! I had grown increasingly discontent with Typst’s region model, wondering why we bother with it if the results end up worse than what TeX is able to do with its much simpler model. This wasn’t entirely fair as tables <em>do</em> profit from regions right now. But it is a simple fact that Typst’s widow &amp; orphan and float handling are in an unsatisfactory state and regions <em>do</em> make it more complex.</p>
+<p>The feeling that Typst requires a more relayout-based approach was there for a while. But so far I hadn’t seen the connection between relayout and regions: That, for great typesetting results, <strong>regions require relayout.</strong> We <em>buy</em> the flexibility to have certain complex layouts by introducing the complexity of regions. So far we have paid the costs of regions without reaping their rewards.</p>
+<p>With the layout engine now fully pure (and <a href="https://github.com/typst/typst/pull/4366">parallelized</a>!), relayout has become much simpler and safer than before, so it’s about time to make use of it. There are still many things to figure out, but I think this is quite an important realization.</p>
+<hr class="footnotes-sep">
+<section class="footnotes">
+<ol class="footnotes-list">
+<li id="fn1" class="footnote-item"><p>See <a href="https://helpx.adobe.com/indesign/using/threading-text.html">Adobe’s documentation on text threading</a> for more details. <a href="#fnref1" class="footnote-backref">↩︎</a></p>
+</li>
+<li id="fn2" class="footnote-item"><p>The <a href="https://typst.app/universe/package/wrap-it"><code>wrap-it</code></a> package does add support, though with significant limitations. <a href="#fnref2" class="footnote-backref">↩︎</a></p>
+</li>
+<li id="fn3" class="footnote-item"><p>See <a href="https://tex.stackexchange.com/questions/624559/how-to-make-text-in-a-table-cell-spanning-over-multiple-pages">this response on tex.stackexchange.com</a>. <a href="#fnref3" class="footnote-backref">↩︎</a></p>
+</li>
+<li id="fn4" class="footnote-item"><p>Explained by Frank Mittelbach in <a href="https://youtu.be/qXS27F5NxUg?si=5KA6YhvImUbBZWIb&amp;t=3056">his talk “E-TeX: Guidelines for future TeX extensions, revisited”</a>. <a href="#fnref4" class="footnote-backref">↩︎</a></p>
+</li>
+</ol>
+</section>
+]]></content>
+        <author>
+            <name>Laurenz Mädje</name>
+            <email>laurmaedje@gmail.com</email>
+            <uri>https://laurmaedje.github.io</uri>
+        </author>
+    </entry>
+</feed>

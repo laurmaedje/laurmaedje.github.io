@@ -11,6 +11,18 @@
     <meta property="og:site_name" content="Laurenz&#x27;s Blog" />
     <meta property="og:description" content="Blog about my coding projects." />
     <link rel="stylesheet" href="/styles.css" />
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      href="/rss.xml"
+      title="RSS Feed for Laurenz&#x27;s Blog"
+    />
+    <link
+      rel="alternate"
+      type="application/atom+xml"
+      href="/atom.xml"
+      title="Atom Feed for Laurenz&#x27;s Blog"
+    />
   </head>
   <body>
     <header>
@@ -21,6 +33,12 @@
     </header>
     <main>
       <ul class="posts">
+        <li>
+          <h2>
+            <a href="/posts/layout-models">TeX and Typst: Layout Models</a>
+          </h2>
+          <time date="2024-06-21T00:00:00.000Z">June 21, 2024</time>
+        </li>
         <li>
           <h2><a href="/posts/frozen-state">Frozen State</a></h2>
           <time date="2024-01-15T00:00:00.000Z">January 15, 2024</time>
@@ -44,7 +62,12 @@
       </ul>
     </main>
     <footer>
-      <a href="/programmable-markup-language-for-typesetting.pdf">My Thesis</a>
+      <nav>
+        <a href="/rss.xml">RSS Feed</a><a href="/atom.xml">Atom Feed</a
+        ><a href="/programmable-markup-language-for-typesetting.pdf"
+          >My Thesis</a
+        >
+      </nav>
     </footer>
   </body>
 </html>
