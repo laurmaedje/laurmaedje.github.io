@@ -2,7 +2,6 @@
 title: "TeX and Typst: Layout Models"
 date: 2024-06-21
 description: An exploration of the layout models of TeX and Typst.
-hidden: true
 ---
 
 Lately, I've been pondering the ways in which Typst's layout model differs from TeX's. While Typst adopts parts of TeX's model, in particular the paragraph layout algorithm, there are also significant differences. Most of these are related to block-level layout --- things like line placement, widow & orphan prevention, tables, and floats. I want to use this post to explore these differences, to identify the benefits and limitations of both models, and to present my thinking on the future of Typst's layout engine.
