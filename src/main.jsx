@@ -13,38 +13,30 @@ const ReactDOMServer = require("react-dom/server");
 const serveHandler = require("serve-handler");
 const yaml = require("js-yaml");
 const child_process = require("child_process");
-const stream = require("stream");
+const { Feed } = require("feed");
+
+// Configuration.
+const DEV = process.argv.includes("--dev");
+const AHREFS =
+  "ab196c32b430cd534174470f3bfc67da55eb94fc3c0b88a09f58dc62f75ec411";
+
+// Metadata.
+const NAME = "Laurenz Mädje";
+const EMAIL = "laurmaedje@gmail.com";
+const YEAR = new Date().getFullYear();
+const TITLE = "Laurenz's Blog";
+const DESCRIPTION = "Blog about my coding projects.";
+const BASE_URL = "https://laurmaedje.github.io";
+const RSS_PATH = "/rss.xml";
+const ATOM_PATH = "/atom.xml";
 
 // Setup markdown.
 const markdown = require("markdown-it")({
   html: true,
   linkify: true,
   typographer: true,
-  highlight: (src, lang) => {
-    if (lang === "typ") {
-      const code = child_process
-        .execSync("cargo run --manifest-path highlight/Cargo.toml", {
-          input: src,
-          stdio: ["pipe", "pipe", "ignore"],
-        })
-        .toString("utf8");
-      return `<pre>${code}</pre>`;
-    }
-
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        return hljs.highlight(src, { language: lang }).value;
-      } catch {}
-    }
-
-    return "";
-  },
+  highlight,
 }).use(require("markdown-it-footnote"));
-
-// Configuration.
-const DEV = process.argv.includes("--dev");
-const AHREFS =
-  "ab196c32b430cd534174470f3bfc67da55eb94fc3c0b88a09f58dc62f75ec411";
 
 main();
 
@@ -83,10 +75,11 @@ function build() {
       const [_, head, ...tail] = full.split("---");
       const meta = yaml.load(head);
       const src = tail.join("---");
+      const content = markdown.render(src);
       return {
         name,
         url: `/posts/${name}`,
-        src,
+        content,
         title: meta.title,
         date: moment(meta.date).utc(),
         description: meta.description,
@@ -122,6 +115,11 @@ function build() {
     fs.writeFileSync(`dist/posts/${post.name}/index.html`, html);
   }
 
+  // Generate feeds.
+  const feed = createFeed(posts);
+  fs.writeFileSync(`dist/${RSS_PATH}`, feed.rss2());
+  fs.writeFileSync(`dist/${ATOM_PATH}`, feed.atom1());
+
   // Generate index file.
   const html = renderToStandaloneHtml(<Index posts={posts} />);
   fs.writeFileSync("dist/index.html", html);
@@ -156,12 +154,7 @@ function Index({ posts }) {
     ));
 
   return (
-    <Base
-      type="website"
-      title="Laurenz's Blog"
-      description="Blog about my coding projects."
-      url="/"
-    >
+    <Base type="website" title={TITLE} description={DESCRIPTION} url="/">
       <ul className="posts">{items}</ul>
     </Base>
   );
@@ -169,18 +162,17 @@ function Index({ posts }) {
 
 // The full HTML for a single post.
 function Post({ post }) {
-  const html = markdown.render(post.src);
   return (
     <Base
       type="article"
-      title={post.title + " | Laurenz's Blog"}
+      title={post.title + " | " + TITLE}
       description={post.description}
       url={post.url}
     >
       <article>
         <h1>{post.title}</h1>
         <time date={post.date.toISOString()}>{post.date.format("LL")}</time>
-        {parseHtmlToReact(html)}
+        {parseHtmlToReact(post.content)}
       </article>
     </Base>
   );
@@ -202,13 +194,26 @@ function Base({ type, title, description, url, children }) {
         <meta name="description" content={description} />
         <meta property="og:type" content={type} />
         <meta property="og:title" content={title} />
-        <meta
-          property="og:url"
-          content={"https://laurmaedje.github.io" + url}
-        />
-        <meta property="og:site_name" content="Laurenz's Blog" />
+        <meta property="og:url" content={BASE_URL + url} />
+        <meta property="og:site_name" content={TITLE} />
         <meta property="og:description" content={description} />
         <link rel="stylesheet" href="/styles.css" />
+        {url == "/" && (
+          <>
+            <link
+              rel="alternate"
+              type="application/rss+xml"
+              href={RSS_PATH}
+              title={`RSS Feed for ${TITLE}`}
+            />
+            <link
+              rel="alternate"
+              type="application/atom+xml"
+              href={ATOM_PATH}
+              title={`Atom Feed for ${TITLE}`}
+            />
+          </>
+        )}
       </head>
       <body>
         <header>
@@ -221,9 +226,13 @@ function Base({ type, title, description, url, children }) {
         {live}
         {url == "/" && (
           <footer>
-            <a href="/programmable-markup-language-for-typesetting.pdf">
-              My Thesis
-            </a>
+            <nav>
+              <a href={RSS_PATH}>RSS Feed</a>
+              <a href={ATOM_PATH}>Atom Feed</a>
+              <a href="/programmable-markup-language-for-typesetting.pdf">
+                My Thesis
+              </a>
+            </nav>
           </footer>
         )}
       </body>
@@ -238,4 +247,59 @@ function GitHub() {
       <img src="/assets/github.png" alt="GitHub" width="32" height="32" />
     </a>
   );
+}
+
+// Create the feed object for RSS and Atom feed.
+function createFeed(posts) {
+  const author = { name: NAME, email: EMAIL, link: BASE_URL };
+
+  const feed = new Feed({
+    title: TITLE,
+    description: DESCRIPTION,
+    id: BASE_URL,
+    link: BASE_URL,
+    language: "en",
+    copyright: `All rights reserved ${YEAR}, ${NAME}`,
+    feedLinks: { rss: BASE_URL + RSS_PATH, atom: BASE_URL + ATOM_PATH },
+    author,
+  });
+
+  for (const post of posts) {
+    if (post.hidden) {
+      continue;
+    }
+
+    feed.addItem({
+      title: post.title,
+      id: post.url,
+      link: post.url,
+      description: post.description,
+      content: post.content,
+      author: [author],
+      date: post.date.toDate(),
+    });
+  }
+
+  return feed;
+}
+
+// Highlight source code.
+function highlight(src, lang) {
+  if (lang === "typ") {
+    const code = child_process
+      .execSync("cargo run --manifest-path highlight/Cargo.toml", {
+        input: src,
+        stdio: ["pipe", "pipe", "ignore"],
+      })
+      .toString("utf8");
+    return `<pre>${code}</pre>`;
+  }
+
+  if (lang && hljs.getLanguage(lang)) {
+    try {
+      return hljs.highlight(src, { language: lang }).value;
+    } catch {}
+  }
+
+  return "";
 }
