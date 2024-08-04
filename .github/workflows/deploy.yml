@@ -10,11 +10,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-node@v1
+      - uses: oven-sh/setup-bun@v2
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --manifest-path highlight/Cargo.toml
-      - run: npm ci
-      - run: npm run build
+      - run: bun install
+      - run: bun run build
       - uses: peaceiris/actions-gh-pages@v3
         with:
           publish_dir: ./dist

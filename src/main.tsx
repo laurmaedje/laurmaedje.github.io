@@ -1,19 +1,39 @@
-const fs = require("fs");
-const path = require("path");
-const http = require("http");
+import childProcess from "child_process";
+import chokidar from "chokidar";
+import feed from "feed";
+import fs from "fs";
+import hljs from "highlight.js";
+import http from "http";
+import livereload from "livereload";
+import markdownIt from "markdown-it";
+import markdownItFootnote from "markdown-it-footnote";
+import moment from "moment";
+import parseHtmlToReact from "html-react-parser";
+import path from "path";
+import prettier from "prettier";
+import React from "react";
+import ReactDOMServer from "react-dom/server";
+import serveHandler from "serve-handler";
+import yaml from "js-yaml";
 
-const chokidar = require("chokidar");
-const hljs = require("highlight.js");
-const livereload = require("livereload");
-const moment = require("moment");
-const parseHtmlToReact = require("html-react-parser");
-const prettier = require("prettier");
-const React = require("react");
-const ReactDOMServer = require("react-dom/server");
-const serveHandler = require("serve-handler");
-const yaml = require("js-yaml");
-const child_process = require("child_process");
-const { Feed } = require("feed");
+// One blog post.
+type Post = {
+  name: string;
+  url: string;
+  content: string;
+  title: string;
+  date: moment.Moment;
+  description: string;
+  hidden: boolean;
+};
+
+// YAML metadata in .md files.
+type Meta = {
+  title: string;
+  date: Date;
+  description: string;
+  hidden?: boolean;
+};
 
 // Configuration.
 const DEV = process.argv.includes("--dev");
@@ -31,12 +51,12 @@ const RSS_PATH = "/rss.xml";
 const ATOM_PATH = "/atom.xml";
 
 // Setup markdown.
-const markdown = require("markdown-it")({
+const markdown = markdownIt({
   html: true,
   linkify: true,
   typographer: true,
   highlight,
-}).use(require("markdown-it-footnote"));
+}).use(markdownItFootnote);
 
 main();
 
@@ -67,13 +87,13 @@ function build() {
   console.log("Building.");
 
   // Read posts.
-  const posts = fs
+  const posts: Post[] = fs
     .readdirSync("posts")
     .map((filename) => {
       const name = path.parse(filename).name;
       const full = fs.readFileSync(`posts/${filename}`).toString();
       const [_, head, ...tail] = full.split("---");
-      const meta = yaml.load(head);
+      const meta = yaml.load(head) as Meta;
       const src = tail.join("---");
       const content = markdown.render(src);
       return {
@@ -86,7 +106,7 @@ function build() {
         hidden: meta.hidden || false,
       };
     })
-    .sort((a, b) => a.date - b.date);
+    .sort((a, b) => a.date.valueOf() - b.date.valueOf());
 
   // Setups output directory, write ahrefs file and copy style file.
   mkdir("dist");
@@ -133,13 +153,13 @@ function mkdir(path) {
 }
 
 // Render a React element to a standlone HTML file.
-function renderToStandaloneHtml(root) {
+function renderToStandaloneHtml(root: React.ReactNode) {
   const raw = ReactDOMServer.renderToString(root);
   return "<!DOCTYPE html>\n" + prettier.format(raw, { parser: "html" });
 }
 
 // The full HTML of the blog's main page.
-function Index({ posts }) {
+function Index({ posts }: { posts: Post[] }) {
   const items = posts
     .slice()
     .reverse()
@@ -149,7 +169,7 @@ function Index({ posts }) {
         <h2>
           <a href={post.url}>{post.title}</a>
         </h2>
-        <time date={post.date.toISOString()}>{post.date.format("LL")}</time>
+        <time dateTime={post.date.toISOString()}>{post.date.format("LL")}</time>
       </li>
     ));
 
@@ -161,7 +181,7 @@ function Index({ posts }) {
 }
 
 // The full HTML for a single post.
-function Post({ post }) {
+function Post({ post }: { post: Post }) {
   return (
     <Base
       type="article"
@@ -171,7 +191,7 @@ function Post({ post }) {
     >
       <article>
         <h1>{post.title}</h1>
-        <time date={post.date.toISOString()}>{post.date.format("LL")}</time>
+        <time dateTime={post.date.toISOString()}>{post.date.format("LL")}</time>
         {parseHtmlToReact(post.content)}
       </article>
     </Base>
@@ -179,8 +199,20 @@ function Post({ post }) {
 }
 
 // The HTML skeleton.
-function Base({ type, title, description, url, children }) {
-  let live = undefined;
+function Base({
+  type,
+  title,
+  description,
+  url,
+  children,
+}: {
+  type: string;
+  title: string;
+  description: string;
+  url: string;
+  children: React.ReactNode;
+}) {
+  let live: React.ReactNode | undefined = undefined;
   if (DEV) {
     live = <script src="http://localhost:35729/livereload.js?snipver=1" />;
   }
@@ -250,10 +282,10 @@ function GitHub() {
 }
 
 // Create the feed object for RSS and Atom feed.
-function createFeed(posts) {
+function createFeed(posts: Post[]) {
   const author = { name: NAME, email: EMAIL, link: BASE_URL };
 
-  const feed = new Feed({
+  const blogFeed = new feed.Feed({
     title: TITLE,
     description: DESCRIPTION,
     id: BASE_URL,
@@ -269,7 +301,7 @@ function createFeed(posts) {
       continue;
     }
 
-    feed.addItem({
+    blogFeed.addItem({
       title: post.title,
       id: post.url,
       link: post.url,
@@ -280,13 +312,13 @@ function createFeed(posts) {
     });
   }
 
-  return feed;
+  return blogFeed;
 }
 
 // Highlight source code.
-function highlight(src, lang) {
+function highlight(src: string, lang: string) {
   if (lang === "typ") {
-    const code = child_process
+    const code = childProcess
       .execSync("cargo run --manifest-path highlight/Cargo.toml", {
         input: src,
         stdio: ["pipe", "pipe", "ignore"],
