@@ -15,6 +15,7 @@ import React from "react";
 import ReactDOMServer from "react-dom/server";
 import serveHandler from "serve-handler";
 import yaml from "js-yaml";
+import os from "os";
 
 // One blog post.
 type Post = {
@@ -69,10 +70,13 @@ function main() {
   }
 
   // File server.
+  const port = 3000;
   http
     .createServer((req, res) => serveHandler(req, res, { public: "dist" }))
-    .listen(3000, () => {
-      console.log("Serving at http://localhost:3000");
+    .listen(port, "0.0.0.0", () => {
+      console.log(
+        `Serving at http://localhost:${port} and http://${os.hostname()}:${port}`
+      );
     });
 
   // Recompilation.
