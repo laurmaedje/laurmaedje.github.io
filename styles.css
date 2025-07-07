@@ -247,6 +247,14 @@ pre > code {
   padding: unset;
 }
 
+blockquote {
+  color: #59636e;
+  border-left: 2px solid;
+  border-color: #8995a2;
+  margin-inline-start: 15px;
+  padding-inline-start: 15px;
+}
+
 .hljs-keyword, .hljs-type { color: #d73a49; }
 .hljs-title { color: #4b69c6; }
 .hljs-built_in { color: #16718d; }
