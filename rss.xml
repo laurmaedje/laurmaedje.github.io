@@ -4,7 +4,7 @@
         <title>Laurenz's Blog</title>
         <link>https://laurmaedje.github.io</link>
         <description>Blog about my coding projects.</description>
-        <lastBuildDate>Mon, 07 Jul 2025 13:31:13 GMT</lastBuildDate>
+        <lastBuildDate>Mon, 07 Jul 2025 13:42:03 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
@@ -1127,8 +1127,8 @@ While it also introduces a new dimension of complexity and performance challenge
         </item>
         <item>
             <title><![CDATA[The Math Mode Problem]]></title>
-            <link>/posts/math-mode</link>
-            <guid>/posts/math-mode</guid>
+            <link>/posts/math-mode-problem</link>
+            <guid>/posts/math-mode-problem</guid>
             <pubDate>Mon, 07 Jul 2025 00:00:00 GMT</pubDate>
             <description><![CDATA[Typst's math mode has a strange precedence problem that most people using it will run into at some point.
 ]]></description>

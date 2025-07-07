@@ -2,7 +2,7 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://laurmaedje.github.io</id>
     <title>Laurenz's Blog</title>
-    <updated>2025-07-07T13:31:13.362Z</updated>
+    <updated>2025-07-07T13:42:03.190Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <author>
         <name>Laurenz Mädje</name>
@@ -1150,8 +1150,8 @@ While it also introduces a new dimension of complexity and performance challenge
     </entry>
     <entry>
         <title type="html"><![CDATA[The Math Mode Problem]]></title>
-        <id>/posts/math-mode</id>
-        <link href="/posts/math-mode"/>
+        <id>/posts/math-mode-problem</id>
+        <link href="/posts/math-mode-problem"/>
         <updated>2025-07-07T00:00:00.000Z</updated>
         <summary type="html"><![CDATA[Typst's math mode has a strange precedence problem that most people using it will run into at some point.
 ]]></summary>
