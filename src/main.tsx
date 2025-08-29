@@ -147,6 +147,7 @@ function build() {
   // Generate index file.
   const html = renderToStandaloneHtml(<Index posts={posts} />);
   fs.writeFileSync("dist/index.html", html);
+  fs.writeFileSync("dist/health", "OK");
 }
 
 // Create a directory if it doesn't exist yet.
