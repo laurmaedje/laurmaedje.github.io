@@ -2,7 +2,7 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://laurmaedje.github.io</id>
     <title>Laurenz's Blog</title>
-    <updated>2025-08-29T15:35:57.603Z</updated>
+    <updated>2026-01-05T11:22:42.236Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <author>
         <name>Laurenz Mädje</name>
@@ -12,7 +12,7 @@
     <link rel="alternate" href="https://laurmaedje.github.io"/>
     <link rel="self" href="https://laurmaedje.github.io/atom.xml"/>
     <subtitle>Blog about my coding projects.</subtitle>
-    <rights>All rights reserved 2025, Laurenz Mädje</rights>
+    <rights>All rights reserved 2026, Laurenz Mädje</rights>
     <entry>
         <title type="html"><![CDATA[How To Put 30 Languages Into 1.1MB]]></title>
         <id>/posts/hypher</id>
@@ -1215,6 +1215,59 @@ While it also introduces a new dimension of complexity and performance challenge
 <p>I think solution E demonstrates this even better: If I write <code>omega(x)</code>, but <code>#abs(x)</code>, should I write <code>sin(x)</code> or <code>#sin(x)</code>? I don’t know, it could be either. What about a custom user-defined definition. Should it be used as an identifier or called as a function? The thing is, <em>users don’t really need to care</em> whether something is a math function or a Typst function. All they need to know is: One or multiple letters followed by a parenthesis is considered a function call by Typst, be it a Typst scripting call or a mathematical one. And to me, that implies that both should have the same precedence level, to keep things predictable.</p>
 <p>This also means that you can consistently reason about precedence in equations of a field you’re unfamiliar with, where you’re unsure whether something is a symbol or a custom function. You just need to know: Blue highlighting = function call. Syntax highlighting <em>helps</em> you instead of tricking you just because the highlighter has no access to runtime information.</p>
 <p>I am thus now of the strong opinion that option B is the way to go. It’s not too bad to have to write <code>e^(abs(x))</code> with parentheses and it’s easy to produce a warning for <code>e^abs(x)</code>. There is currently <a href="https://github.com/typst/typst/pull/6442">a PR open that implements option B</a>. I’m still open for further discussion and want to give people some time to respond to this post, should they wish so, but if nothing big comes up, I plan to merge this PR next week.</p>
+]]></content>
+        <author>
+            <name>Laurenz Mädje</name>
+            <email>laurmaedje@gmail.com</email>
+            <uri>https://laurmaedje.github.io</uri>
+        </author>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[Evolving Typst]]></title>
+        <id>/posts/evolving-typst</id>
+        <link href="/posts/evolving-typst"/>
+        <updated>2026-01-05T00:00:00.000Z</updated>
+        <summary type="html"><![CDATA[Thoughts on how we can bring Typst closer to 1.0 while also evolving it more freely.]]></summary>
+        <content type="html"><![CDATA[<p>People frequently ask when we will release a 1.0 version of Typst. The version number “0” is often taken as an indicator of immaturity, as a big sign that says “this software isn’t yet ready for use.” Personally, I think that’s quite unfortunate. I <em>do</em> consider Typst ready for production use and yet I think releasing a 1.x version now would be naive.</p>
+<p>To me, the version number is not a marketing tool but a promise on a technical level. Typst uses <em>semantic versioning</em> and <a href="https://semver.org">SemVer</a> connects certain guarantees to the different parts of a version number. Thus, we need to be sure what those guarantees are and whether we can give them before publishing a release.</p>
+<p>For a project on version number 1.x, SemVer requires the project to release a 2.x when it introduces a breaking change. What constitutes a breaking change though is up to the project / ecosystem the project lives in.</p>
+<p>For Typst, it’s actually pretty hard to come up with a good definition! Sometimes, it’s clear cut: For example, a clearly incompatible change to the syntax is of course breaking. But what about a change that results in a slightly different layout? A change to the default value of a styling property? A change to a built-in show rule that lets user styles compose differently? A change to the internal sorting behavior that happens to <a href="https://github.com/typst/typst/pull/7528">break existing incorrect code</a>? It’s just not that simple and I think figuring out how to classify these different kinds of changes is crucial before we make some kind of promise about how we handle breaking changes.</p>
+<p>That’s just one part though. The other part about reaching 1.x is that there are a few changes I want to make to Typst that are breaking no matter how you look at them. These changes have been on the horizon for a while (people have been eagerly waiting for custom elements since basically the open-source release). Part of why they haven’t happened yet is simply that they are technically and design-wise complex and that we’ve prioritized other things.</p>
+<p>But there’s a second hindrance that has been growing stronger. Regardless of the lack of a promise, Typst <em>has</em> de facto increasingly become more stable. When I look back at the recent Typst releases, breaking changes have become tamer and more minor. Especially with the growth of Typst Universe, breaking something foundational would have rippling effects through the ecosystem.</p>
+<p>Let’s say you want to upgrade your project to make use of some new compiler feature. If one of the packages you use is broken on that version and there isn’t yet an updated version, you can’t really do much. That sucks. Now, assume you’re good on your dependencies but the new version has a pesky syntax change, forcing you to adapt large parts of your markup. That sucks less, but it’s still annoying.</p>
+<p>On a SemVer level, we can just throw our hands up and say “that’s the cost of doing business, we’re on 0.x after all.” And I think that’s entirely fair. Yet, in practice, there’s more to it: If breaking changes are painful for the ecosystem, as a maintainer, it also becomes increasingly painful to make them. You start thinking “can I avoid this change?”, “can I batch these three changes?”, etc. There is some good in this, as it forces you to be deliberate in your actions, but it also slows down the project and reduces the chance that very breaking changes that would be for the better still happen.</p>
+<p>I’m not content with this situation. As I said, I do consider Typst production-ready, but at the same time also <em>far from done.</em> There are still lots of things I want to ship and some of those require changing Typst in incompatible ways. That’s why I think that, even at a 0.x stage, it’s well worth asking ourselves the question: What can we do to make breakage less painful? Doing this somewhat egoistically to allow us to act more freely and fearlessly.</p>
+<hr>
+<p>So what <em>can</em> we do? Let’s take a look at the first, more painful of the two scenarios I’ve painted above. You <em>really</em> need that new layout feature, but your diagramming package just isn’t updated yet and you also happen to really need your diagrams. Let’s say you’re upgrading from 0.14 to 0.15 and there’s some breaking syntax change. Solving this problem isn’t actually that hard. There is a clear boundary between your project and the diagram package and it’s entirely possible for Typst to expose different behavior to both. Typst only needs a very small amount of information to do this: Which behavior to expose to what.</p>
+<p>The behavior you want Typst to expose to a package is the one that it exposed at the time the package was developed. In essence, this means you’re developing against a <em>target</em> Typst version. This is a parallel concept to the <em>minimum</em> Typst version that you can already declare in <code>typst.toml</code> through the <code>compiler</code> field. Consequently, I could imagine the following syntax:</p>
+<pre><code class="language-toml"><span class="hljs-section">[package]</span>
+<span class="hljs-attr">name</span> = <span class="hljs-string">&quot;fancy-diagrams&quot;</span>
+<span class="hljs-attr">version</span> = <span class="hljs-string">&quot;0.4.0&quot;</span>
+<span class="hljs-attr">entrypoint</span> = <span class="hljs-string">&quot;lib.typ&quot;</span>
+<span class="hljs-attr">compiler</span> = { min = <span class="hljs-string">&quot;0.15&quot;</span>, target = <span class="hljs-string">&quot;0.17&quot;</span> }
+</code></pre>
+<p>With this, your package would say, “I don’t work on anything below 0.15 and if you’re newer than 0.17, please avoid exposing breaking changes since 0.17 to me.” And <code>compiler = &quot;0.15&quot;</code> would be short for both being equal.</p>
+<p>If you’re familiar with Rust, this will probably remind you of the <em>Edition</em> mechanism and technically it’s indeed basically that. Socially though, I would think of it in a different way. I would not commit to retaining a particular compatibility behavior forever, as over time that could complicate the compiler codebase a lot. Rather, I would keep it for a version or two, to smooth out the effects of a change on the ecosystem, giving people and packages time to adapt and migrate. To me, a nice way to think about it is as a <em>deprecation warning on steroids.</em> Indeed, I would probably even warn every time such behavior was triggered.</p>
+<p>Note also that the <code>target</code> setting would not be a promise of stability: If it’s very easy to have compatibility behavior for a breaking change, we’d naturally include it, but if a change had only minor impact and it would be overly hard or even impossible to have compatibility behavior, we could still make a normal breaking change. Just like we do with deprecation warnings now.</p>
+<p>There remains the question what to do with packages that don’t specify a target. To get the most out of this mechanism with the current package ecosystem, the reasonable course of action would be to apply all available compatibility behavior. However, it could be confusing if you create a new package and suddenly Typst returns to ancient behavior. For this reason, I would make the <code>compiler</code> field required, but express this requirement by warning rather than error, at least for now.<sup class="footnote-ref"><a href="#fn1" id="fnref1">[1]</a></sup></p>
+<p>As for a Typst project itself (not a package), always exposing the latest behavior seems very reasonable to me as you have full access to the sources to apply necessary migrations. Besides, you could also just stay on an older compiler version if you really needed to. That said, for rare use cases, I could still imagine a CLI flag/setting that selects the target version for a project.</p>
+<hr>
+<p>This <code>target</code> mechanism would let us make breaking changes without immediately disrupting the entire ecosystem. It buys time for people to migrate. What it doesn’t do is speed up the migration itself. How to deal with a particular breaking change of course depends on the nature of the change. A change could be trivial to fix syntactically or it could require intricate semantic changes.</p>
+<p>I think for some of these changes it would be worthwhile to provide automated migration tooling. This is something we’re in particular considering for likely upcoming changes to math precedence (see my <a href="/posts/math-mode-problem">“Math Mode Problem”</a> blog post for background on that).</p>
+<p>Another potential such change that stands in the room (but isn’t yet decided on) would rejig the function parameter syntax.The current <code>param: default</code> would become <code>param: type = default</code>, with the <code>: type</code> part being an <em>optional</em> type annotation.</p>
+<p>Both of these examples are syntactical and would affect lots of documents. This makes them ideal candidates for automated migration tooling. More semantic migrations could also be feasible, but the cost vs impact trade-off would need to be judged on a case-by-case basis. I certainly wouldn’t promise to ship migration tooling for every breaking change.</p>
+<p>There isn’t yet a concrete design for migration tooling, so consider this post a kick-off for design discussions. For me personally, the priorities would be discoverability, ease of use, avoidance of false positives, and good integration into both the CLI and the web app.</p>
+<p>On an implementation level, the target compatibility mechanism and migration tooling could actually be closely related! For instance, it could make sense to first compile a document in compatible mode, collecting all sites where compatibility behaviors have been triggered and then directly using this information to drive the automated migration.</p>
+<hr>
+<p>Even though Typst is still on version number zero, as it has matured, the project has grown some resistance against change. This is a <em>healthy</em> thing for a project to develop as it ensures change is well-motivated. On the flip side, it also encumbers large changes for the better.</p>
+<p>Technically, the version number zero allows us to freely make breaking changes. However, this ignores the social capital expended by repeatedly disrupting what people build on Typst. Some might argue that putting work into migration tooling at a 0.x stage is work spent on the wrong priorities. I would beg to differ. I consider it a good investment <em>now</em> as it lets us break Typst more freely while <em>also</em> bringing it closer to stability and the version number “1.0” people so much desire!</p>
+<hr class="footnotes-sep">
+<section class="footnotes">
+<ol class="footnotes-list">
+<li id="fn1" class="footnote-item"><p>The fact that it’s a warning instead of an error would in itself form a compatibility behavior. If you didn’t specify the compiler field, you also didn’t specify a target version that matches or exceeds the version where the target version mechanism itself was introduced. <a href="#fnref1" class="footnote-backref">↩︎</a></p>
+</li>
+</ol>
+</section>
 ]]></content>
         <author>
             <name>Laurenz Mädje</name>
