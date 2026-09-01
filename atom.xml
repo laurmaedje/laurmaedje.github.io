@@ -2,7 +2,7 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://laurmaedje.github.io</id>
     <title>Laurenz's Blog</title>
-    <updated>2026-09-01T17:59:20.259Z</updated>
+    <updated>2026-09-01T18:16:04.769Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <author>
         <name>Laurenz Mädje</name>
@@ -1298,8 +1298,7 @@ While it also introduces a new dimension of complexity and performance challenge
 <p><strong>Auto-snapshot.</strong> JJ automatically snapshots your disk state whenever you run any command. This makes it very hard to permanently lose work. That’s great! However, practically, I have two issues with it.</p>
 <p>First, snapshotting is a side effect (it can trigger an automatic rebase and affects the undo history). This is sometimes unexpected (especially when triggered automatically through <code>jjui</code>) or in combination with the same-change merges (see below). For me, it meant that it could make a difference whether I clicked on my terminal once (focusing <code>jjui</code>) or twice between editing the code.</p>
 <p>Second, it’s easy to accidentally snapshot something like <code>node_modules</code>. Let’s say you’ve added a new JS project to your repo (adding <code>node_modules</code> to gitignore) and then you go back and edit an old commit. Then, oops, <code>node_modules</code> is suddenly in that commit. There are some heuristic in place to detect large files, but not all files you don’t want are large. In one of my projects, I suppose <code>node_modules</code> is still in the jj history. I didn’t really bother to find out. But it irks me a bit.</p>
-<p><strong>Same-change merges.</strong></p>
-<p>There is an interesting merge behavior in JJ that I think Git has too out of the box. However, it didn’t ever happen to me in Git, probably because I wouldn’t even endeavour to do crazy enough rebases.</p>
+<p><strong>Same-change merges.</strong> There is an interesting merge behavior in JJ that I think Git has too out of the box. However, it didn’t ever happen to me in Git, probably because I wouldn’t even endeavour to do crazy enough rebases.</p>
 <p>Let’s say you have two commits A and B. Initially, B makes some change. Now, you try to instead make the same change in A, save and trigger jj somehow (e.g. via <code>jjui</code> or <code>jj log</code>). This triggers an automatic rebase and the change in B is absorbed away. But now, if you Ctrl+Z in A and save again, it’s still gone in B.</p>
 <p>The same-change merge behavior is certainly convenient in many situations, but this tripped me up. Luckily, there is a setting you can configure to disable it. Personally, I prefer to resolve a few extra conflicts, but have that peace of mind.</p>
 <pre><code class="language-toml"><span class="hljs-section">[merge]</span>
