@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Conversations with JJ | Laurenz&#x27;s Blog</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="My experience with using JJ." />
+    <meta property="og:type" content="article" />
+    <meta
+      property="og:title"
+      content="Conversations with JJ | Laurenz&#x27;s Blog"
+    />
+    <meta property="og:url" content="https://laurmaedje.github.io/posts/jj" />
+    <meta property="og:site_name" content="Laurenz&#x27;s Blog" />
+    <meta property="og:description" content="My experience with using JJ." />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <a href="/" class="home">Laurenz&#x27;s Blog</a
+      ><a href="https://github.com/laurmaedje" class="social"
+        ><img src="/assets/github.png" alt="GitHub" width="32" height="32"
+      /></a>
+    </header>
+    <main>
+      <article>
+        <h1>Conversations with JJ</h1>
+        <time datetime="2026-09-01T00:00:00.000Z">September 1, 2026</time>
+        <p>
+          So far my blog has been exclusively about Typst, but today I felt like
+          writing about something else. (Which is rare enough as is, so I
+          thought I’d better pick up on that!)
+        </p>
+        <p>
+          I’ve been using
+          <a href="https://www.jj-vcs.dev/latest/"><code>jj</code></a> on and
+          off and wanted to share some of my journey. I probably didn’t choose
+          the best learning path, but I did at least start by reading
+          <a href="https://steveklabnik.github.io/jujutsu-tutorial/"
+            >Steve’s tutorial</a
+          >
+          instead of just jumping in blindly. Beyond that though, I just tried
+          to figure stuff out as I needed it.
+        </p>
+        <p>
+          Perhaps I should begin with <em>why</em> I wanted to learn about it.
+          Aside from people around me and in my team fussing about it, I do
+          enjoy a tidy PR history. I’m pretty comfortable with rebasing stuff,
+          but my PR clean-up workflow still wasn’t great. It sat somewhere
+          between interactive rebase, dragging commits around in GitHub Desktop
+          and fiddling around with Tower (a Mac Git client). I do enjoy GUIs a
+          lot, in particular for readings diffs<sup class="footnote-ref"
+            ><a href="#fn1" id="fnref1">[1]</a></sup
+          >, so there’s also a lot of jumping around between GUI tools and the
+          terminal (for when the GUI tool is too limited). So my goal with jj
+          was to have a better tool to make my commit histories tidy.
+        </p>
+        <p>
+          I’ve been using jj side-by-side with Git in this way for the past six
+          months or so. It’s served me very well, so first of all, thanks to the
+          folks behind it for that! In particular, I think it is very pragmatic
+          that jj is so interoperable with Git; if it was me, it would probably
+          have been more like “let’s start fresh and leave all the legacy stuff
+          behind” (see Typst…)
+        </p>
+        <p>
+          What hasn’t happened is that I have migrated entirely to it. It’s
+          still just my PR clean-up tool. That’s fine and it probably says as
+          much, if not more, about me as about jj. But I figured I could still
+          use this post to document my journey. Let me preface this with one
+          disclaimer: I have very limited time at work and outside of work
+          (unlike back in university) I rarely want to deal with coding-related
+          stuff. So when I hit a roadblock with jj, the course of least
+          resistancy for me is to go back to Git.
+        </p>
+        <h2>What I like a lot</h2>
+        <p>
+          <strong>Editing the history.</strong> Jumping around and editing
+          commits feels very smooth! It makes clean-up work much simpler,
+          especially with
+          <a href="https://github.com/idursun/jjui"><code>jjui</code></a>
+          (awesome tool as well). I still don’t have the CLI commands memorized
+          all that well because I mostly just use <code>jjui</code> and I know
+          the shortcuts there, so that’s enough most of the time.
+        </p>
+        <p>
+          <strong>Richer set of operations.</strong> I enjoy that there are more
+          individual commands for distinct concepts. The way Git works is very
+          ingrained in my brain by now, so I’m mostly okay with the way it
+          works, but I think it’s better to have these high-level concepts as
+          separate commands (e.g. <code>jj split</code>).
+        </p>
+        <p>
+          <strong>Undo.</strong> The undo feature is also very cool. Of course,
+          it’s helpful in case you mess up and need to recover lost data
+          (happened to me a few times with jj; with great power comes great
+          reponsibility :P). But I also find it useful that I can just try to
+          make some changes, see how the conflicts play out and then just nope
+          out a few times. Of course, with Git I can also do that by keeping a
+          SHA I want to return to somewhere or using the reflog, but it’s not
+          quite as smooth.
+        </p>
+        <p>
+          <strong>The tool itself.</strong> The CLI feels just feels … friendly?
+          I don’t know. But I like it!
+        </p>
+        <h2>What tripped me up</h2>
+        <p>
+          <strong>The log.</strong> The output of <code>jj log</code> still has
+          me a little confused at times. On the repository I work in mostly
+          (<code>typst/typst</code>), by default it shows me a ton of branches
+          from other people (which I checked out recently to review their work)
+          and it becomes hard to (a) find my work and (b) to just see the
+          history of the current branch (especially if it truncates immutable
+          commits). I’ve experimented with changing the default revset a bit,
+          and it’s somewhat better, but this problem is just new to me; I was
+          doing fine on that end with Git.
+        </p>
+        <p>
+          It is my understanding that many people use branch names less with jj
+          (I may be wrong on that one). But I like named branches precisely
+          because I can easily jump around between stuff, without having to find
+          it through related commits. This brings me to the related issue that
+          whenever I jump back and forth between Git and editing a branch via
+          JJ, it leaves me on detached HEAD even if the currently edited change
+          is empty and the previous one bookmarked. That’s always one extra step
+          to remember before committing new stuff via Git.
+        </p>
+        <p>
+          And precisely because I like branches, <em>when</em> I add new commits
+          via JJ (which doesn’t happen so much because I use it just for
+          clean-up), the fact that the branch doesn’t automatically move forward
+          annoys me a little.
+        </p>
+        <p>
+          <strong>Auto-snapshot.</strong> JJ automatically snapshots your disk
+          state whenever you run any command. This makes it very hard to
+          permanently lose work. That’s great! However, practically, I have two
+          issues with it.
+        </p>
+        <p>
+          First, snapshotting is a side effect (it can trigger an automatic
+          rebase and affects the undo history). This is sometimes unexpected
+          (especially when triggered automatically through <code>jjui</code>) or
+          in combination with the same-change merges (see below). For me, it
+          meant that it could make a difference whether I clicked on my terminal
+          once (focusing <code>jjui</code>) or twice between editing the code.
+        </p>
+        <p>
+          Second, it’s easy to accidentally snapshot something like
+          <code>node_modules</code>. Let’s say you’ve added a new JS project to
+          your repo (adding <code>node_modules</code> to gitignore) and then you
+          go back and edit an old commit. Then, oops,
+          <code>node_modules</code> is suddenly in that commit. There are some
+          heuristic in place to detect large files, but not all files you don’t
+          want are large. In one of my projects, I suppose
+          <code>node_modules</code> is still in the jj history. I didn’t really
+          bother to find out. But it irks me a bit.
+        </p>
+        <p><strong>Same-change merges.</strong></p>
+        <p>
+          There is an interesting merge behavior in JJ that I think Git has too
+          out of the box. However, it didn’t ever happen to me in Git, probably
+          because I wouldn’t even endeavour to do crazy enough rebases.
+        </p>
+        <p>
+          Let’s say you have two commits A and B. Initially, B makes some
+          change. Now, you try to instead make the same change in A, save and
+          trigger jj somehow (e.g. via <code>jjui</code> or
+          <code>jj log</code>). This triggers an automatic rebase and the change
+          in B is absorbed away. But now, if you Ctrl+Z in A and save again,
+          it’s still gone in B.
+        </p>
+        <p>
+          The same-change merge behavior is certainly convenient in many
+          situations, but this tripped me up. Luckily, there is a setting you
+          can configure to disable it. Personally, I prefer to resolve a few
+          extra conflicts, but have that peace of mind.
+        </p>
+        <pre><code class="language-toml"><span class="hljs-section">[merge]</span>
+<span class="hljs-attr">same-change</span> = <span class="hljs-string">&quot;keep&quot;</span>
+</code></pre>
+        <h2>What I’d love</h2>
+        <p>
+          To be honest, the main reason why I haven’t managed to go all-in on JJ
+          is probably that I just need good GUI tooling for viewing and
+          splitting diffs. With <code>jj</code>, I love the ability to jump
+          around and make changes, but I’m trading it for the easiest way to
+          read diffs and select partial changes. While
+          <code>jj split</code> does the job, I would be so much faster with a
+          good GUI. When I’m not deep in the history, I still prefer splitting
+          up my latest commit via GitHub Desktop instead. So to summarize: I’d
+          love to see a really polished, native-feeling GUI for JJ. I’d probably
+          pay for that.
+        </p>
+        <hr class="footnotes-sep" />
+        <section class="footnotes">
+          <ol class="footnotes-list">
+            <li id="fn1" class="footnote-item">
+              <p>
+                There’s probably great diff viewers for the terminal, but just
+                scrolling through <code>git diff</code> output isn’t it for me.
+                It does not invite perusing the diff, which I think is very
+                important in order to produce good code. Over the course of
+                creating a PR, I read my diff over and over, both spawning ideas
+                for refactors and spotting bugs.
+                <a href="#fnref1" class="footnote-backref">↩︎</a>
+              </p>
+            </li>
+          </ol>
+        </section>
+      </article>
+    </main>
+  </body>
+</html>
